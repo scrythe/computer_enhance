@@ -69,12 +69,12 @@ test "test disassembly_0037" {
     const listing_0037_disassembly_output_paths = [_][]const u8{ "testing_results", "listing_0037_single_register_mov_disassembly.asm" };
     const listing_0037_disassembly_output_path = try std.fs.path.join(arena_alloc, &listing_0037_disassembly_output_paths);
     try std.Io.Dir.cwd().createDirPath(io, "testing_results");
-    const file_listing_0037 = try std.Io.Dir.cwd().createFile(io, listing_0037_disassembly_output_path, .{ .truncate = false });
+    const file_listing_0037_disassembly = try std.Io.Dir.cwd().createFile(io, listing_0037_disassembly_output_path, .{ .truncate = false });
 
     var output_buffer: [66]u8 = undefined;
     try disassembly_0037(content_listing_0037, &output_buffer);
 
-    try file_listing_0037.writeStreamingAll(io, &output_buffer);
+    try file_listing_0037_disassembly.writeStreamingAll(io, &output_buffer);
 
     const nasm_result = try std.process.run(arena_alloc, io, .{
         .argv = &.{ "nasm", listing_0037_disassembly_output_path, "-o", "/dev/stdout" },

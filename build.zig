@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) !void {
+    const allocator = b.allocator;
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -9,14 +10,17 @@ pub fn build(b: *std.Build) !void {
     const run_step = b.step("run", "Run the compiler");
     const test_step = b.step("test", "Run tests");
 
-    const file = b.option([]const u8, "file", "File to execute") orelse {
-        std.debug.print("Missing File, use -Dfile=<filename.zig>\n", .{});
+    const filename = b.option([]const u8, "file", "File to execute") orelse {
+        std.debug.print("Missing File, use -Dfile=<filename>\n", .{});
         return;
     };
-    const file_path = try std.fs.path.join(b.allocator, &.{ "src", file });
+    const file = try allocator.alloc(u8, filename.len + 4);
+    @memcpy(file[0..filename.len], filename);
+    @memcpy(file[filename.len..], ".zig");
+    const file_path = try std.fs.path.join(allocator, &.{ "src", file });
 
     const exe = b.addExecutable(.{
-        .name = "computer_enhance",
+        .name = filename,
         .use_llvm = debug_build,
         .root_module = b.createModule(.{
             .root_source_file = b.path(file_path),
