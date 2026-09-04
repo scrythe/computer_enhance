@@ -65,7 +65,7 @@ pub fn main(init: std.process.Init) !void {
 fn disassemble_binary(disassembly_buffer: []u8, content_listing_0039: []u8) ![]u8 {
     var disassembly_buffer_writer = std.Io.Writer.fixed(disassembly_buffer);
 
-    try disassembly_buffer_writer.print("; listing_0037_single_register_mov disassembly:\nbits 16", .{});
+    try disassembly_buffer_writer.print("; listing_0039_more_movs disassembly:\nbits 16", .{});
     var i: u32 = 0;
     while (i < content_listing_0039.len) {
         const instruction = content_listing_0039[i] >> 2;
