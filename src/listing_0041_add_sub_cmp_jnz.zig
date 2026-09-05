@@ -228,7 +228,38 @@ fn disassembly_binary(disassembly_buffer: []u8, content_listing_0041: []u8) ![]u
             }
             i += 1;
         } else {
-            break;
+            const jump_name = switch (content_listing_0041[i]) {
+                0b01110100 => "je",
+                0b01111100 => "jl",
+                0b01111110 => "jle",
+                0b01110010 => "jb",
+                0b01110110 => "jbe",
+                0b01111010 => "jp",
+                0b01110000 => "jo",
+                0b01111000 => "js",
+                0b01110101 => "jne",
+                0b01111101 => "jnl",
+                0b01111111 => "jnle",
+                0b01110011 => "jnb",
+                0b01110111 => "jnbe",
+                0b01111011 => "jnp",
+                0b01110001 => "jno",
+                0b01111001 => "jns",
+                0b11100010 => "loop",
+                0b11100001 => "loopz",
+                0b11100000 => "loopnz",
+                0b11100011 => "jcxz",
+                else => break,
+            };
+            std.debug.print("a: {s}\n", .{jump_name});
+            i += 1;
+            // Thanks to @mmozeiko at substacks for the $+offset
+            // https://open.substack.com/pub/computerenhance/p/opcode-patterns-in-8086-arithmetic?r=8mnmxa&utm_campaign=comment-list-share-cta&utm_medium=web&comments=true&commentId=13475922
+            const jump_pos_offset: i8 = @as(i8, @bitCast(content_listing_0041[i])) + 2;
+            const sign: u8 = if (jump_pos_offset < 0) '-' else '+';
+            try disassembly_buffer_writer.print("\n{s} ${c}{d}", .{ jump_name, sign, @abs(jump_pos_offset) });
+
+            i += 1;
         }
     }
     return disassembly_buffer[0..disassembly_buffer_writer.end];
