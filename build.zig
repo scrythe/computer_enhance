@@ -19,6 +19,24 @@ pub fn build(b: *std.Build) !void {
     @memcpy(file[filename.len..], ".zig");
     const file_path = try std.fs.path.join(allocator, &.{ "src", file });
 
+    const lib = b.addLibrary(.{
+        .name = "contrib_zig",
+        // In this case the main source file is merely a path, however, in more
+        // complicated build scripts, this could be a generated file.
+        .linkage = .static,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("computer_enhance/perfaware/sim86/shared/contrib_zig/src/sim86.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    lib.root_module.addCSourceFile(.{
+        .file = b.path("computer_enhance/perfaware/sim86/sim86_lib.cpp"),
+    });
+    lib.root_module.addIncludePath(b.path("computer_enhance/perfaware/sim86/shared"));
+    lib.installHeader(b.path("computer_enhance/perfaware/sim86/shared/sim86_shared.h"), "sim86_shared.h");
+
     const exe = b.addExecutable(.{
         .name = filename,
         .use_llvm = debug_build,
@@ -30,6 +48,7 @@ pub fn build(b: *std.Build) !void {
         }),
     });
     exe.pie = debug_build;
+    exe.root_module.addImport("sim86", lib.root_module);
 
     const exe_tests = b.addTest(.{ .root_module = exe.root_module });
 
