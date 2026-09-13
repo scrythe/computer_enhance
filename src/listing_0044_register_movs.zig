@@ -11,37 +11,51 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0043_immediate_movs" };
+    const listing_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0044_register_movs" };
     const listing_path = try std.fs.path.join(arena_alloc, &listing_paths);
-    const content_listing: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_path, arena_alloc, .unlimited);
+    const listing_content: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_path, arena_alloc, .unlimited);
 
-    const listing_expected_output_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0043_immediate_movs.txt" };
+    const listing_expected_output_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0044_register_movs.txt" };
     const listing_expected_output_path = try std.fs.path.join(arena_alloc, &listing_expected_output_paths);
     const listing_expected_output: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_expected_output_path, arena_alloc, .unlimited);
 
     const listing_output_buffer = try arena_alloc.alloc(u8, listing_expected_output.len * 2);
     var listing_output_writer = std.Io.Writer.fixed(listing_output_buffer);
+    try listing_output_writer.print("--- test\\listing_0044_register_movs execution ---\r\n", .{});
+
+    var temp_print_buffer: [1024]u8 = undefined;
+    var temp_print_writer = std.Io.Writer.fixed(&temp_print_buffer);
 
     try std.testing.expectEqual(sim86.getVersion(), 4);
 
     var registers: [8]u16 = undefined;
     @memset(&registers, 0);
 
-    try listing_output_writer.print("--- test\\listing_0043_immediate_movs execution ---\r\n", .{});
-
     var current_pos: u32 = 0;
-    while (current_pos < content_listing.len) {
-        const decoded = try sim86.decode8086Instruction(content_listing[current_pos..]);
+    while (current_pos < listing_content.len) {
+        const decoded = try sim86.decode8086Instruction(listing_content[current_pos..]);
         var reg = decoded.Operands[0].data.Register;
         const reg_name = sim86.registerNameFromOperand(&reg);
         const prev_data = registers[reg.Index - 1];
-        const data: u16 = @intCast(decoded.Operands[1].data.Immediate.Value);
-        registers[reg.Index - 1] = data;
-        try listing_output_writer.print("mov {s}, {d} ; {s}:0x{x}->0x{x} \r\n", .{ reg_name, data, reg_name, prev_data, data });
+        const second_operand = decoded.Operands[1];
+        var second_operand_data: u16 = undefined;
+        var second_operand_name: []const u8 = undefined;
+        if (second_operand.Type == .OperandRegister) {
+            var second_operand_register = second_operand.data.Register;
+            second_operand_data = registers[second_operand_register.Index - 1];
+            second_operand_name = sim86.registerNameFromOperand(&second_operand_register);
+        } else {
+            second_operand_data = @intCast(second_operand.data.Immediate.Value);
+            const start = temp_print_writer.end;
+            try temp_print_writer.printInt(second_operand_data, 10, .lower, .{});
+            second_operand_name = temp_print_buffer[start..temp_print_writer.end];
+        }
+        // const data: u16 = @intCast(decoded.Operands[0].data.Immediate.Value);
+        registers[reg.Index - 1] = second_operand_data;
+        try listing_output_writer.print("mov {s}, {s} ; {s}:0x{x}->0x{x} \r\n", .{ reg_name, second_operand_name, reg_name, prev_data, second_operand_data });
 
         current_pos += decoded.Size;
     }
-
     try listing_output_writer.print("\r\nFinal registers:\r\n", .{});
     for (registers, 0..) |register, reg_i| {
         var reg =
