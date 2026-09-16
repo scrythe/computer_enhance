@@ -48,6 +48,7 @@ const FlagsMap = blk: {
 const file_name = "listing_0056_estimating_cycles";
 
 pub fn main(init: std.process.Init) !void {
+    const is_8086 = false;
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
@@ -76,6 +77,7 @@ pub fn main(init: std.process.Init) !void {
         &ip_reg,
         &flags,
         listing_content,
+        is_8086,
     );
 
     try listing_output_writer.print("\r\nFinal registers:\r\n", .{});
@@ -107,7 +109,9 @@ pub fn main(init: std.process.Init) !void {
         try listing_output_writer.print("   flags: {s}\r\n", .{temp_print_buffer[flags_text_start..temp_print_writer.end]});
     }
 
-    try listing_output_writer.print("\r\n", .{});
+    if (is_8086) {
+        try listing_output_writer.print("\r\n", .{});
+    }
 
     const listing_output = listing_output_buffer[0..listing_output_writer.end];
 
@@ -145,7 +149,12 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
-    try std.testing.expectEqualStrings(listing_expected_output[start_8086..end_8086], listing_output);
+    const listing_expected_output_slice = if (is_8086)
+        listing_expected_output[start_8086..end_8086]
+    else
+        listing_expected_output[start_8088..end_8088];
+
+    try std.testing.expectEqualStrings(listing_expected_output_slice, listing_output);
     std.debug.print("{s}", .{listing_output});
 }
 
@@ -156,7 +165,11 @@ fn execute_instructions(
     ip_reg: *u16,
     flags: *[FlagsMap.len]bool,
     listing_content: []u8,
+    is_8086: bool,
 ) !void {
+    // to be identical with caseys testing file
+    const space_if_8086 = if (is_8086) " " else "";
+
     try listing_output_writer.print("--- test\\{s} execution ---\r\n", .{file_name});
 
     var temp_print_buffer: [1024]u8 = undefined;
@@ -398,6 +411,17 @@ fn execute_instructions(
             },
         }
 
+        var transfers: u32 = 0;
+        if (decoded.Operands[0].Type == .OperandMemory) {
+            switch (decoded.Op) {
+                .Op_mov => transfers = 1,
+                .Op_add => transfers = 2,
+                else => {},
+            }
+        } else if (decoded.Operands[1].Type == .OperandMemory) {
+            transfers = 1;
+        }
+
         switch (decoded.Op) {
             .Op_mov,
             .Op_add,
@@ -495,18 +519,27 @@ fn execute_instructions(
             flags_change_text = temp_print_buffer[start..temp_print_writer.end];
         }
 
+        const transfers_penalty = 4 * transfers;
         var clocks_explanation: []const u8 = "";
         if (effect_addr_clock != 0) {
             const start = temp_print_writer.end;
-            try temp_print_writer.print(" ({d} + {d}ea)", .{ clocks_addition, effect_addr_clock });
+            try temp_print_writer.print(" ({d} + {d}ea", .{ clocks_addition, effect_addr_clock });
+            if (!is_8086) {
+                try temp_print_writer.print(" + {d}p", .{transfers_penalty});
+            }
+            try temp_print_writer.print(")", .{});
             clocks_explanation = temp_print_buffer[start..temp_print_writer.end];
         }
 
         clocks_addition += effect_addr_clock;
+        if (!is_8086) {
+            clocks_addition += transfers_penalty;
+        }
+
         clocks_total += clocks_addition;
 
         const mnemonic = sim86.mnemonicFromOperationType(decoded.Op);
-        try listing_output_writer.print("{s} {s} ; Clocks: +{d} = {d}{s} |{s} ip:0x{x}->0x{x}{s} \r\n", .{
+        try listing_output_writer.print("{s} {s} ; Clocks: +{d} = {d}{s} |{s} ip:0x{x}->0x{x}{s}{s}\r\n", .{
             mnemonic,
             instruction_arguments_text,
             clocks_addition,
@@ -516,6 +549,7 @@ fn execute_instructions(
             prev_ip_reg,
             new_ip_reg,
             flags_change_text,
+            space_if_8086,
         });
 
         temp_print_writer.end = 0;
