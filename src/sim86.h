@@ -7,4 +7,4 @@ struct Parse_File_Result {
 
 Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size);
 int execute_and_compare_nasm(char *output_data, int output_data_size,
-                             char *testing_data);
+                             char *testing_data, int testing_file_size);

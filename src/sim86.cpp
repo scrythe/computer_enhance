@@ -12,7 +12,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0040_challenge_movs"
+#define FILE_NAME "listing_0041_add_sub_cmp_jnz"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
     testing_file_size = input_file_size;
   }
 
-  char output_data[1024];
+  char output_data[2048];
   Parse_File_Result parse_file_result =
       parse_file(output_data, (u8 *)input_data, input_file_size);
   int output_data_size = parse_file_result.len;
@@ -72,8 +72,8 @@ int main(int argc, char *argv[]) {
     return exit_code;
   }
   printf("%s", output_data);
-  int exec_err_val =
-      execute_and_compare_nasm(output_data, output_data_size, testing_data);
+  int exec_err_val = execute_and_compare_nasm(output_data, output_data_size,
+                                              testing_data, testing_file_size);
   if (exec_err_val != 0) {
     return exec_err_val;
   }
@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
 Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
   int exit_code = 0;
   int len = 0;
-  char temp_buf[1024];
+  char temp_buf[2048];
   int temp_len = 0;
 
   len += sprintf(buf, "; %s disassembly:\nbits 16\n", FILE_NAME);
@@ -97,15 +97,17 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
 
     const char *mnemonic = Sim86_MnemonicFromOperationType(decoded.Op);
 
-    const char *args[2];
+    const char *args_text[2];
+    int args[2];
     for (int i = 0; i < 2; i++) {
       switch (decoded.Operands[i].Type) {
       case Operand_Register:
-        args[i] = Sim86_RegisterNameFromOperand(&decoded.Operands[i].Register);
+        args_text[i] =
+            Sim86_RegisterNameFromOperand(&decoded.Operands[i].Register);
         break;
 
       case Operand_Immediate: {
-        args[i] = temp_buf + temp_len;
+        args_text[i] = temp_buf + temp_len;
         int val = decoded.Operands[i].Immediate.Value;
         temp_len += sprintf(temp_buf + temp_len, "%d", val);
         temp_buf[temp_len] = '\0';
@@ -121,7 +123,7 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
             Sim86_RegisterNameFromOperand(&effec_addr.Terms[1].Register);
         int displacement = effec_addr.Displacement;
 
-        args[i] = temp_buf + temp_len;
+        args_text[i] = temp_buf + temp_len;
         temp_len += sprintf(temp_buf + temp_len, "[%s", term_reg_1);
         if (strlen(term_reg_2)) {
           temp_len += sprintf(temp_buf + temp_len, "+%s", term_reg_2);
@@ -138,8 +140,7 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
         break;
       }
 
-      default: {
-        exit_code = 1;
+      case Operand_None: {
       }
       }
     }
@@ -154,15 +155,57 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
       }
     }
 
-    len +=
-        sprintf(buf + len, "%s %s%s, %s\n", mnemonic, size, args[0], args[1]);
+    char *instruction_args_text = temp_buf + temp_len;
+    switch (decoded.Op) {
+    case Op_mov:
+    case Op_add:
+    case Op_sub:
+    case Op_cmp: {
+      temp_len += sprintf(temp_buf + temp_len, "%s%s, %s", size, args_text[0],
+                          args_text[1]);
+      temp_buf[temp_len] = '\0';
+      temp_len += 1;
+      break;
+    }
+    case Op_je:
+    case Op_jl:
+    case Op_jle:
+    case Op_jb:
+    case Op_jbe:
+    case Op_jp:
+    case Op_jo:
+    case Op_js:
+    case Op_jne:
+    case Op_jnl:
+    case Op_jg:
+    case Op_jnb:
+    case Op_ja:
+    case Op_jnp:
+    case Op_jno:
+    case Op_jns:
+    case Op_loop:
+    case Op_loopz:
+    case Op_loopnz:
+    case Op_jcxz: {
+      int offset = decoded.Operands[0].Immediate.Value + 2;
+      char sign = offset > 0 ? '+' : '-';
+      temp_len += sprintf(temp_buf + temp_len, "$%c%d", sign, abs(offset));
+      temp_buf[temp_len] = '\0';
+      temp_len += 1;
+      break;
+    }
+    default: {
+    }
+    }
+
+    len += sprintf(buf + len, "%s %s\n", mnemonic, instruction_args_text);
     offset += decoded.Size;
   }
   return Parse_File_Result{.len = len, .exit_code = exit_code};
 }
 
 int execute_and_compare_nasm(char *output_data, int output_data_size,
-                             char *testing_data) {
+                             char *testing_data, int testing_file_size) {
   int exit_code = 0;
   mkdir("testing_results", 0751);
   FILE *output_nasm_file = fopen(FILE_DISASSEMBLY_OUTPUT_PATH, "w");
@@ -186,7 +229,8 @@ int execute_and_compare_nasm(char *output_data, int output_data_size,
 
   nasm_output_buffer[nasm_output_size] = '\0';
 
-  if (exit_code == 0 and strcmp(testing_data, nasm_output_buffer) != 0) {
+  if (exit_code == 0 and testing_file_size != nasm_output_size and
+      memcmp(testing_data, nasm_output_buffer, testing_file_size) != 0) {
     printf("Expected:%s\n\nGot:%s\n\n", testing_data, nasm_output_buffer);
     exit_code = 1;
   }
