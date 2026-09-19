@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_0039_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0039_more_movs" };
+    const listing_0039_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0039_more_movs" };
     const listing_0039_path = try std.fs.path.join(arena_alloc, &listing_0039_paths);
     const content_listing_0039: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_0039_path, arena_alloc, .unlimited);
     const max_chars_per_instruction = "mov bx, [bx + si + 65535]".len;

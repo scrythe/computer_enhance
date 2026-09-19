@@ -8,7 +8,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_0037_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0037_single_register_mov" };
+    const listing_0037_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0037_single_register_mov" };
     const listing_0037_path = try std.fs.path.join(arena_alloc, &listing_0037_paths);
     const content_listing_0037 = try Io.Dir.cwd().readFileAlloc(io, listing_0037_path, arena_alloc, .unlimited);
 
@@ -62,7 +62,7 @@ test "test disassembly_0037" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
-    const listing_0037_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0037_single_register_mov" };
+    const listing_0037_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0037_single_register_mov" };
     const listing_0037_path = try std.fs.path.join(arena_alloc, &listing_0037_paths);
     const content_listing_0037 = try Io.Dir.cwd().readFileAlloc(io, listing_0037_path, arena_alloc, .unlimited);
 

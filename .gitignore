@@ -3,3 +3,4 @@ testing_results/
 .zig-cache/
 zig-out/
 results
+build/

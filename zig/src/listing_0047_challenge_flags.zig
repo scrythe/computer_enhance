@@ -5,6 +5,8 @@ const Allocator = std.mem.Allocator;
 const sim86 = @import("sim86");
 const Instruction = sim86.Instruction;
 
+extern fn Sim86_Decode8086Instruction(SourceSize: u32, Source: [*]u8, Dest: *sim86.Instruction) void;
+
 const Flags = enum(u8) { C, P, A, S, Z, O };
 const FlagsMap = blk: {
     const flags_fields = @typeInfo(Flags).@"enum".fields;
@@ -15,15 +17,17 @@ const FlagsMap = blk: {
     break :blk flags_map;
 };
 
+// const FlagsMap = [_]u8{ 'P', 'S', 'Z', 'O', 'A' };
+
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0048_ip_register" };
+    const listing_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0047_challenge_flags" };
     const listing_path = try std.fs.path.join(arena_alloc, &listing_paths);
     const listing_content: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_path, arena_alloc, .unlimited);
 
-    const listing_expected_output_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0048_ip_register.txt" };
+    const listing_expected_output_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0047_challenge_flags.txt" };
     const listing_expected_output_path = try std.fs.path.join(arena_alloc, &listing_expected_output_paths);
     const listing_expected_output: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_expected_output_path, arena_alloc, .unlimited);
 
@@ -31,17 +35,10 @@ pub fn main(init: std.process.Init) !void {
     var listing_output_writer = std.Io.Writer.fixed(listing_output_buffer);
 
     var registers: [14]u16 = undefined;
-    var ip_reg: u16 = 0;
     @memset(&registers, 0);
     var flags: [FlagsMap.len]bool = undefined;
 
-    try execute_instructions(
-        &listing_output_writer,
-        &registers,
-        &ip_reg,
-        &flags,
-        listing_content,
-    );
+    try execute_instructions(&listing_output_writer, &registers, &flags, listing_content);
 
     try listing_output_writer.print("\r\nFinal registers:\r\n", .{});
     for (registers, 0..) |register, reg_i| {
@@ -56,7 +53,6 @@ pub fn main(init: std.process.Init) !void {
             try listing_output_writer.print("      {s}: 0x{x:0>4} ({d})\r\n", .{ reg_name, register, register });
         }
     }
-    try listing_output_writer.print("      ip: 0x{x:0>4} ({d})\r\n", .{ ip_reg, ip_reg });
     try listing_output_writer.print("   flags: ", .{});
     for (flags, 0..) |flag_val, i| {
         if (flag_val) {
@@ -73,14 +69,17 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("{s}", .{listing_output});
 }
 
-fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u16, ip_reg: *u16, flags: *[FlagsMap.len]bool, listing_content: []u8) !void {
-    try listing_output_writer.print("--- test\\listing_0048_ip_register execution ---\r\n", .{});
+fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u16, flags: *[FlagsMap.len]bool, listing_content: []u8) !void {
+    try listing_output_writer.print("--- test\\listing_0047_challenge_flags execution ---\r\n", .{});
+
+    // errdefer std.debug.print("{s}", .{listing_output_writer.buffer[0..listing_output_writer.end]});
 
     var temp_print_buffer: [1024]u8 = undefined;
     var temp_print_writer = std.Io.Writer.fixed(&temp_print_buffer);
 
-    while (ip_reg.* < listing_content.len) {
-        const decoded = try sim86.decode8086Instruction(listing_content[ip_reg.*..]);
+    var current_pos: u32 = 0;
+    while (current_pos < listing_content.len) {
+        const decoded = try sim86.decode8086Instruction(listing_content[current_pos..]);
         var dest_reg = decoded.Operands[0].data.Register;
         var dest_reg_word = sim86.RegisterAccess{ .Index = dest_reg.Index, .Offset = 0, .Count = 2 };
         const dest_reg_name = sim86.registerNameFromOperand(&dest_reg);
@@ -97,8 +96,6 @@ fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u
             }
             break :blk temp_print_buffer[start..temp_print_writer.end];
         };
-
-        const prev_ip_reg_data = ip_reg.*;
 
         // two bytes
         var dest_reg_data = prev_dest_reg_word_data;
@@ -222,19 +219,9 @@ fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u
             flags_change_text = temp_print_buffer[start..temp_print_writer.end];
         }
 
-        ip_reg.* += @intCast(decoded.Size);
-
-        const new_ip_reg_data = ip_reg.*;
-
         const mnemonic = sim86.mnemonicFromOperationType(decoded.Op);
-        try listing_output_writer.print("{s} {s}, {s} ;{s} ip:0x{x}->0x{x}{s} \r\n", .{
-            mnemonic,
-            dest_reg_name,
-            second_operand_name,
-            dest_reg_change_text,
-            prev_ip_reg_data,
-            new_ip_reg_data,
-            flags_change_text,
-        });
+        try listing_output_writer.print("{s} {s}, {s} ;{s}{s} \r\n", .{ mnemonic, dest_reg_name, second_operand_name, dest_reg_change_text, flags_change_text });
+
+        current_pos += decoded.Size;
     }
 }

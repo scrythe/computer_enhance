@@ -6,7 +6,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_0041_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0041_add_sub_cmp_jnz" };
+    const listing_0041_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0041_add_sub_cmp_jnz" };
     const listing_0041_path = try std.fs.path.join(arena_alloc, &listing_0041_paths);
     const content_listing_0041: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_0041_path, arena_alloc, .unlimited);
 

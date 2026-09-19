@@ -19,17 +19,17 @@ const FlagsMap = blk: {
     break :blk flags_map;
 };
 
-const file_name = "listing_0052_memory_add_loop";
+const file_name = "listing_0055_challenge_rectangle";
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", file_name };
+    const listing_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", file_name };
     const listing_path = try std.fs.path.join(arena_alloc, &listing_paths);
     const listing_content: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_path, arena_alloc, .unlimited);
 
-    const listing_expected_output_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", file_name ++ ".txt" };
+    const listing_expected_output_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", file_name ++ ".txt" };
     const listing_expected_output_path = try std.fs.path.join(arena_alloc, &listing_expected_output_paths);
     const listing_expected_output: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_expected_output_path, arena_alloc, .unlimited);
 
@@ -87,6 +87,7 @@ pub fn main(init: std.process.Init) !void {
 
     try std.testing.expectEqualStrings(listing_expected_output, listing_output);
     std.debug.print("{s}", .{listing_output});
+    try save_image(arena_alloc, io, &memory);
 }
 
 fn execute_instructions(
@@ -259,6 +260,16 @@ fn execute_instructions(
                     new_ip_reg = @bitCast(new_ip_reg_i16 + offset_i16);
                 }
             },
+            .Op_loop => {
+                prev_reg = CX_REG_INDEX;
+                prev_reg_val = registers[CX_REG_INDEX - 1];
+                registers[CX_REG_INDEX - 1] = @bitCast(@as(i16, @bitCast(registers[CX_REG_INDEX - 1])) - 1);
+                if (registers[CX_REG_INDEX - 1] != 0) {
+                    const offset_i16: i16 = @truncate(decoded.Operands[0].data.Immediate.Value);
+                    const new_ip_reg_i16: i16 = @intCast(new_ip_reg);
+                    new_ip_reg = @bitCast(new_ip_reg_i16 + offset_i16);
+                }
+            },
             .Op_loopnz => {
                 prev_reg = CX_REG_INDEX;
                 prev_reg_val = registers[CX_REG_INDEX - 1];
@@ -326,7 +337,11 @@ fn execute_instructions(
                 const start = temp_print_writer.end;
 
                 if (decoded.Operands[0].Type == .OperandMemory) {
-                    try temp_print_writer.print("word ", .{});
+                    if (decoded.Flags.Wide) {
+                        try temp_print_writer.print("word ", .{});
+                    } else {
+                        try temp_print_writer.print("byte ", .{});
+                    }
                 }
 
                 try temp_print_writer.print("{s}, {s}", .{
@@ -335,7 +350,7 @@ fn execute_instructions(
                 });
                 instruction_arguments_text = temp_print_buffer[start..temp_print_writer.end];
             },
-            .Op_jne, .Op_je, .Op_jb, .Op_loopnz, .Op_jp => {
+            .Op_jne, .Op_je, .Op_jb, .Op_loop, .Op_loopnz, .Op_jp => {
                 const start = temp_print_writer.end;
                 const offset = decoded.Operands[0].data.Immediate.Value + @as(i32, @intCast(decoded.Size));
                 const offset_sign: u8 = if (offset < 0) '-' else '+';
@@ -390,4 +405,12 @@ fn execute_instructions(
 
         ip_reg.* = @intCast(new_ip_reg);
     }
+}
+
+fn save_image(arena_alloc: Allocator, io: Io, memory: *const [MEMORY_SIZE]u8) !void {
+    const image_paths = [_][]const u8{ "results", file_name ++ ".data" };
+    const image_path = try std.fs.path.join(arena_alloc, &image_paths);
+    try std.Io.Dir.cwd().createDirPath(io, "results");
+    const file_image_path = try std.Io.Dir.cwd().createFile(io, image_path, .{ .truncate = true });
+    try file_image_path.writeStreamingAll(io, memory);
 }

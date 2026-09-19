@@ -11,11 +11,11 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0043_immediate_movs" };
+    const listing_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0043_immediate_movs" };
     const listing_path = try std.fs.path.join(arena_alloc, &listing_paths);
     const content_listing: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_path, arena_alloc, .unlimited);
 
-    const listing_expected_output_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", "listing_0043_immediate_movs.txt" };
+    const listing_expected_output_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0043_immediate_movs.txt" };
     const listing_expected_output_path = try std.fs.path.join(arena_alloc, &listing_expected_output_paths);
     const listing_expected_output: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_expected_output_path, arena_alloc, .unlimited);
 

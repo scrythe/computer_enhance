@@ -9,32 +9,6 @@ const CX_REG_INDEX = 3;
 
 const MEMORY_SIZE = 2 << 15;
 
-const CyclesList = enum { RegReg, RegMem, MemReg, RegImm, MemImm };
-const MovCyclesList: [5]u8 = [_]u8{ 2, 8, 9, 4, 10 };
-const AddCyclesList: [5]u8 = [_]u8{ 3, 9, 16, 4, 17 };
-
-const EffecAddrReg = enum(u32) {
-    BX = 4,
-    SP = 5,
-    BP = 6,
-    SI = 7,
-    DI = 8,
-
-    inline fn val(effecAddrReg: EffecAddrReg) u32 {
-        return @intFromEnum(effecAddrReg);
-    }
-};
-
-const EffecAddrCal = enum(u32) {
-    DispOnly = 6,
-    BaseIndexOnly = 5,
-    DispAndBaseIndex = 9,
-    BaseAndIndex1 = 7,
-    BaseAndIndex2 = 8,
-    DispAndBaseAndIndex1 = 11,
-    DispAndBaseAndIndex2 = 12,
-};
-
 const Flags = enum(u8) { C, P, A, S, Z, O };
 const FlagsMap = blk: {
     const flags_fields = @typeInfo(Flags).@"enum".fields;
@@ -45,18 +19,17 @@ const FlagsMap = blk: {
     break :blk flags_map;
 };
 
-const file_name = "listing_0056_estimating_cycles";
+const file_name = "listing_0054_draw_rectangle";
 
 pub fn main(init: std.process.Init) !void {
-    const is_8086 = false;
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", file_name };
+    const listing_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", file_name };
     const listing_path = try std.fs.path.join(arena_alloc, &listing_paths);
     const listing_content: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_path, arena_alloc, .unlimited);
 
-    const listing_expected_output_paths = [_][]const u8{ "computer_enhance", "perfaware", "part1", file_name ++ ".txt" };
+    const listing_expected_output_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", file_name ++ ".txt" };
     const listing_expected_output_path = try std.fs.path.join(arena_alloc, &listing_expected_output_paths);
     const listing_expected_output: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_expected_output_path, arena_alloc, .unlimited);
 
@@ -77,7 +50,6 @@ pub fn main(init: std.process.Init) !void {
         &ip_reg,
         &flags,
         listing_content,
-        is_8086,
     );
 
     try listing_output_writer.print("\r\nFinal registers:\r\n", .{});
@@ -109,53 +81,13 @@ pub fn main(init: std.process.Init) !void {
         try listing_output_writer.print("   flags: {s}\r\n", .{temp_print_buffer[flags_text_start..temp_print_writer.end]});
     }
 
-    if (is_8086) {
-        try listing_output_writer.print("\r\n", .{});
-    }
+    try listing_output_writer.print("\r\n", .{});
 
     const listing_output = listing_output_buffer[0..listing_output_writer.end];
 
-    var start_8086: usize = 0;
-    var end_8086 = listing_expected_output.len;
-    for (0..listing_expected_output.len) |i| {
-        const char = listing_expected_output[i];
-        if (char == '-') {
-            start_8086 = i;
-            break;
-        }
-    }
-    for (start_8086..listing_expected_output.len) |i| {
-        const char = listing_expected_output[i];
-        if (char == '*') {
-            end_8086 = i - 2;
-            break;
-        }
-    }
-
-    var start_8088: usize = end_8086;
-    var end_8088 = listing_expected_output.len;
-    for (end_8086..listing_expected_output.len) |i| {
-        const char = listing_expected_output[i];
-        if (char == '-') {
-            start_8088 = i;
-            break;
-        }
-    }
-    for (start_8088..listing_expected_output.len) |i| {
-        const char = listing_expected_output[i];
-        if (char == '*') {
-            end_8088 = i;
-            break;
-        }
-    }
-
-    const listing_expected_output_slice = if (is_8086)
-        listing_expected_output[start_8086..end_8086]
-    else
-        listing_expected_output[start_8088..end_8088];
-
-    try std.testing.expectEqualStrings(listing_expected_output_slice, listing_output);
+    try std.testing.expectEqualStrings(listing_expected_output, listing_output);
     std.debug.print("{s}", .{listing_output});
+    try save_image(arena_alloc, io, &memory);
 }
 
 fn execute_instructions(
@@ -165,17 +97,12 @@ fn execute_instructions(
     ip_reg: *u16,
     flags: *[FlagsMap.len]bool,
     listing_content: []u8,
-    is_8086: bool,
 ) !void {
-    // to be identical with caseys testing file
-    const space_if_8086 = if (is_8086) " " else "";
-
     try listing_output_writer.print("--- test\\{s} execution ---\r\n", .{file_name});
 
     var temp_print_buffer: [1024]u8 = undefined;
     var temp_print_writer = std.Io.Writer.fixed(&temp_print_buffer);
 
-    var clocks_total: u32 = 0;
     while (ip_reg.* < listing_content.len) {
         const decoded = try sim86.decode8086Instruction(listing_content[ip_reg.*..]);
         const prev_ip_reg = ip_reg.*;
@@ -188,11 +115,6 @@ fn execute_instructions(
         var operands_text: [2][]const u8 = undefined;
         var operands_data: [2]u16 = undefined;
         var operands_effec_addr_data: [2]u16 = undefined;
-
-        var clocks_addition: u32 = 0;
-
-        var effect_addr_clock: u32 = 0;
-
         for (decoded.Operands, 0..) |operand, i| {
             switch (operand.Type) {
                 .OperandRegister => {
@@ -240,28 +162,7 @@ fn execute_instructions(
                     const low = memory[operands_effec_addr_data[i]];
                     const high: u16 = memory[operands_effec_addr_data[i] + 1];
                     operands_data[i] = high << 8 | low;
-
-                    if (term1_reg.Index != 0 and term2_reg.Index != 0 and displacement != 0) {
-                        const is_BP_and_DI = (term1_reg.Index == @intFromEnum(EffecAddrReg.BP)) and (term2_reg.Index == @intFromEnum(EffecAddrReg.DI));
-                        const is_BX_and_SI = (term1_reg.Index == @intFromEnum(EffecAddrReg.BX)) and (term2_reg.Index == @intFromEnum(EffecAddrReg.SI));
-                        if (is_BP_and_DI or is_BX_and_SI)
-                            effect_addr_clock = @intFromEnum(EffecAddrCal.DispAndBaseAndIndex1)
-                        else
-                            effect_addr_clock = @intFromEnum(EffecAddrCal.DispAndBaseAndIndex2);
-                    } else if (term1_reg.Index != 0 and term2_reg.Index != 0) {
-                        const is_BP_and_DI = (term1_reg.Index == @intFromEnum(EffecAddrReg.BP)) and (term2_reg.Index == @intFromEnum(EffecAddrReg.DI));
-                        const is_BX_and_SI = (term1_reg.Index == @intFromEnum(EffecAddrReg.BX)) and (term2_reg.Index == @intFromEnum(EffecAddrReg.SI));
-                        if (is_BP_and_DI or is_BX_and_SI)
-                            effect_addr_clock = @intFromEnum(EffecAddrCal.BaseAndIndex1)
-                        else
-                            effect_addr_clock = @intFromEnum(EffecAddrCal.BaseAndIndex2);
-                    } else if (term1_reg.Index != 0 and displacement != 0) {
-                        effect_addr_clock = @intFromEnum(EffecAddrCal.DispAndBaseIndex);
-                    } else if (term1_reg.Index != 0) {
-                        effect_addr_clock = @intFromEnum(EffecAddrCal.BaseIndexOnly);
-                    } else {
-                        effect_addr_clock = @intFromEnum(EffecAddrCal.DispOnly);
-                    }
+                    // std.debug.print("low: {d}, high: {d}, full: {d}, addr: {d}\n", .{ low, high, operands_data[i], operands_effec_addr_data[i] });
                 },
                 .OperandImmediate => {
                     const start = temp_print_writer.end;
@@ -272,22 +173,6 @@ fn execute_instructions(
                 },
                 .OperandNone => {},
             }
-        }
-
-        var cycles_list: CyclesList = undefined;
-        if (decoded.Operands[0].Type == .OperandRegister and decoded.Operands[1].Type == .OperandRegister)
-            cycles_list = .RegReg
-        else if (decoded.Operands[0].Type == .OperandRegister and decoded.Operands[1].Type == .OperandMemory)
-            cycles_list = .RegMem
-        else if (decoded.Operands[0].Type == .OperandMemory and decoded.Operands[1].Type == .OperandRegister)
-            cycles_list = .MemReg
-        else if (decoded.Operands[0].Type == .OperandRegister and decoded.Operands[1].Type == .OperandImmediate)
-            cycles_list = .RegImm
-        else if (decoded.Operands[0].Type == .OperandMemory and decoded.Operands[1].Type == .OperandImmediate)
-            cycles_list = .MemImm
-        else {
-            std.debug.print("{any} {any}", .{ decoded.Operands[0].Type, decoded.Operands[1].Type });
-            unreachable;
         }
 
         var instruction_arguments_text: []const u8 = "";
@@ -307,7 +192,6 @@ fn execute_instructions(
         switch (decoded.Op) {
             .Op_mov => {
                 res = operands_data[1];
-                clocks_addition += MovCyclesList[@intFromEnum(cycles_list)];
             },
             .Op_sub, .Op_cmp => {
                 const operands_data_i16_1: i16 = @bitCast(operands_data[0]);
@@ -354,7 +238,6 @@ fn execute_instructions(
                 flags[@intFromEnum(Flags.A)] = unsigned_add_u4[1] == 1;
 
                 res = @bitCast(signed_add[0]);
-                clocks_addition += AddCyclesList[@intFromEnum(cycles_list)];
             },
             .Op_jne => {
                 if (!flags[@intFromEnum(Flags.Z)]) {
@@ -372,16 +255,6 @@ fn execute_instructions(
             },
             .Op_jb => {
                 if (flags[@intFromEnum(Flags.C)]) {
-                    const offset_i16: i16 = @truncate(decoded.Operands[0].data.Immediate.Value);
-                    const new_ip_reg_i16: i16 = @intCast(new_ip_reg);
-                    new_ip_reg = @bitCast(new_ip_reg_i16 + offset_i16);
-                }
-            },
-            .Op_loop => {
-                prev_reg = CX_REG_INDEX;
-                prev_reg_val = registers[CX_REG_INDEX - 1];
-                registers[CX_REG_INDEX - 1] = @bitCast(@as(i16, @bitCast(registers[CX_REG_INDEX - 1])) - 1);
-                if (registers[CX_REG_INDEX - 1] != 0) {
                     const offset_i16: i16 = @truncate(decoded.Operands[0].data.Immediate.Value);
                     const new_ip_reg_i16: i16 = @intCast(new_ip_reg);
                     new_ip_reg = @bitCast(new_ip_reg_i16 + offset_i16);
@@ -409,17 +282,6 @@ fn execute_instructions(
                 std.debug.print("not implemented: {s}\n", .{mnemonic});
                 unreachable;
             },
-        }
-
-        var transfers: u32 = 0;
-        if (decoded.Operands[0].Type == .OperandMemory) {
-            switch (decoded.Op) {
-                .Op_mov => transfers = 1,
-                .Op_add => transfers = 2,
-                else => {},
-            }
-        } else if (decoded.Operands[1].Type == .OperandMemory) {
-            transfers = 1;
         }
 
         switch (decoded.Op) {
@@ -478,7 +340,7 @@ fn execute_instructions(
                 });
                 instruction_arguments_text = temp_print_buffer[start..temp_print_writer.end];
             },
-            .Op_jne, .Op_je, .Op_jb, .Op_loop, .Op_loopnz, .Op_jp => {
+            .Op_jne, .Op_je, .Op_jb, .Op_loopnz, .Op_jp => {
                 const start = temp_print_writer.end;
                 const offset = decoded.Operands[0].data.Immediate.Value + @as(i32, @intCast(decoded.Size));
                 const offset_sign: u8 = if (offset < 0) '-' else '+';
@@ -519,41 +381,26 @@ fn execute_instructions(
             flags_change_text = temp_print_buffer[start..temp_print_writer.end];
         }
 
-        const transfers_penalty = 4 * transfers;
-        var clocks_explanation: []const u8 = "";
-        if (effect_addr_clock != 0) {
-            const start = temp_print_writer.end;
-            try temp_print_writer.print(" ({d} + {d}ea", .{ clocks_addition, effect_addr_clock });
-            if (!is_8086) {
-                try temp_print_writer.print(" + {d}p", .{transfers_penalty});
-            }
-            try temp_print_writer.print(")", .{});
-            clocks_explanation = temp_print_buffer[start..temp_print_writer.end];
-        }
-
-        clocks_addition += effect_addr_clock;
-        if (!is_8086) {
-            clocks_addition += transfers_penalty;
-        }
-
-        clocks_total += clocks_addition;
-
         const mnemonic = sim86.mnemonicFromOperationType(decoded.Op);
-        try listing_output_writer.print("{s} {s} ; Clocks: +{d} = {d}{s} |{s} ip:0x{x}->0x{x}{s}{s}\r\n", .{
+        try listing_output_writer.print("{s} {s} ;{s} ip:0x{x}->0x{x}{s} \r\n", .{
             mnemonic,
             instruction_arguments_text,
-            clocks_addition,
-            clocks_total,
-            clocks_explanation,
             registers_change_text,
             prev_ip_reg,
             new_ip_reg,
             flags_change_text,
-            space_if_8086,
         });
 
         temp_print_writer.end = 0;
 
         ip_reg.* = @intCast(new_ip_reg);
     }
+}
+
+fn save_image(arena_alloc: Allocator, io: Io, memory: *const [MEMORY_SIZE]u8) !void {
+    const image_paths = [_][]const u8{ "results", file_name ++ ".data" };
+    const image_path = try std.fs.path.join(arena_alloc, &image_paths);
+    try std.Io.Dir.cwd().createDirPath(io, "results");
+    const file_image_path = try std.Io.Dir.cwd().createFile(io, image_path, .{ .truncate = true });
+    try file_image_path.writeStreamingAll(io, memory);
 }
