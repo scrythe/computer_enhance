@@ -12,12 +12,12 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0039_more_movs"
-#define FILE_INPUT_PATH "../computer_enhance/perfaware/part1/" FILE_NAME
+#define FILE_NAME "listing_0040_challenge_movs"
+#define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
-  "../testing_results/" FILE_NAME "_disassembly.asm"
+  "testing_results/" FILE_NAME "_disassembly.asm"
 #define FILE_TEST_EXECUTION_PATH                                               \
-  "..computer_enhance/perfaware/part1/" FILE_NAME ".txt"
+  "computer_enhance/perfaware/part1/" FILE_NAME ".txt"
 
 int main(int argc, char *argv[]) {
   u32 version = Sim86_GetVersion();
@@ -124,13 +124,16 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
         args[i] = temp_buf + temp_len;
         temp_len += sprintf(temp_buf + temp_len, "[%s", term_reg_1);
         if (strlen(term_reg_2)) {
-          temp_len += sprintf(temp_buf + temp_len, " + %s", term_reg_2);
+          temp_len += sprintf(temp_buf + temp_len, "+%s", term_reg_2);
         }
-        if (displacement > 0) {
-          temp_len += sprintf(temp_buf + temp_len, " + %d", displacement);
+        if (displacement != 0) {
+          temp_len += sprintf(temp_buf + temp_len, "+%d", displacement);
         }
 
         temp_len += sprintf(temp_buf + temp_len, "]");
+
+        temp_buf[temp_len] = '\0';
+        temp_len += 1;
 
         break;
       }
@@ -141,7 +144,18 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
       }
     }
 
-    len += sprintf(buf + len, "%s %s, %s\n", mnemonic, args[0], args[1]);
+    char *size = (char *)"";
+    if (decoded.Operands[0].Type == Operand_Memory and
+        decoded.Operands[1].Type == Operand_Immediate) {
+      if (decoded.Flags == Inst_Wide) {
+        size = (char *)"word ";
+      } else {
+        size = (char *)"byte ";
+      }
+    }
+
+    len +=
+        sprintf(buf + len, "%s %s%s, %s\n", mnemonic, size, args[0], args[1]);
     offset += decoded.Size;
   }
   return Parse_File_Result{.len = len, .exit_code = exit_code};
@@ -150,7 +164,7 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
 int execute_and_compare_nasm(char *output_data, int output_data_size,
                              char *testing_data) {
   int exit_code = 0;
-  mkdir("../testing_results", 0751);
+  mkdir("testing_results", 0751);
   FILE *output_nasm_file = fopen(FILE_DISASSEMBLY_OUTPUT_PATH, "w");
   fwrite(output_data, 1, output_data_size, output_nasm_file);
   fclose(output_nasm_file);
