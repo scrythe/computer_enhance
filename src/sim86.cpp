@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +12,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0038_many_register_mov"
+#define FILE_NAME "listing_0039_more_movs"
 #define FILE_INPUT_PATH "../computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "../testing_results/" FILE_NAME "_disassembly.asm"
@@ -63,8 +64,13 @@ int main(int argc, char *argv[]) {
   }
 
   char output_data[1024];
-  int output_data_size =
+  Parse_File_Result parse_file_result =
       parse_file(output_data, (u8 *)input_data, input_file_size);
+  int output_data_size = parse_file_result.len;
+  int exit_code = parse_file_result.exit_code;
+  if (exit_code) {
+    return exit_code;
+  }
   printf("%s", output_data);
   int exec_err_val =
       execute_and_compare_nasm(output_data, output_data_size, testing_data);
@@ -75,8 +81,11 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-int parse_file(char *buf, u8 *input_data, int input_file_size) {
+Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
+  int exit_code = 0;
   int len = 0;
+  char temp_buf[1024];
+  int temp_len = 0;
 
   len += sprintf(buf, "; %s disassembly:\nbits 16\n", FILE_NAME);
 
@@ -87,19 +96,60 @@ int parse_file(char *buf, u8 *input_data, int input_file_size) {
                                 &decoded);
 
     const char *mnemonic = Sim86_MnemonicFromOperationType(decoded.Op);
-    const char *dest_reg =
-        Sim86_RegisterNameFromOperand(&decoded.Operands[0].Register);
-    const char *second_reg =
-        Sim86_RegisterNameFromOperand(&decoded.Operands[1].Register);
-    // len += sprintf(buf + len, "%s %s, %s\n", mnemonic, dest_reg, second_reg);
-    len += sprintf(buf + len, "%s %s, %s\n", mnemonic, dest_reg, second_reg);
+
+    const char *args[2];
+    for (int i = 0; i < 2; i++) {
+      switch (decoded.Operands[i].Type) {
+      case Operand_Register:
+        args[i] = Sim86_RegisterNameFromOperand(&decoded.Operands[i].Register);
+        break;
+
+      case Operand_Immediate: {
+        args[i] = temp_buf + temp_len;
+        int val = decoded.Operands[i].Immediate.Value;
+        temp_len += sprintf(temp_buf + temp_len, "%d", val);
+        temp_buf[temp_len] = '\0';
+        temp_len += 1;
+        break;
+      }
+
+      case Operand_Memory: {
+        effective_address_expression effec_addr = decoded.Operands[i].Address;
+        const char *term_reg_1 =
+            Sim86_RegisterNameFromOperand(&effec_addr.Terms[0].Register);
+        const char *term_reg_2 =
+            Sim86_RegisterNameFromOperand(&effec_addr.Terms[1].Register);
+        int displacement = effec_addr.Displacement;
+
+        args[i] = temp_buf + temp_len;
+        temp_len += sprintf(temp_buf + temp_len, "[%s", term_reg_1);
+        if (strlen(term_reg_2)) {
+          temp_len += sprintf(temp_buf + temp_len, " + %s", term_reg_2);
+        }
+        if (displacement > 0) {
+          temp_len += sprintf(temp_buf + temp_len, " + %d", displacement);
+        }
+
+        temp_len += sprintf(temp_buf + temp_len, "]");
+
+        break;
+      }
+
+      default: {
+        exit_code = 1;
+      }
+      }
+    }
+
+    len += sprintf(buf + len, "%s %s, %s\n", mnemonic, args[0], args[1]);
     offset += decoded.Size;
   }
-  return len;
+  return Parse_File_Result{.len = len, .exit_code = exit_code};
 }
 
 int execute_and_compare_nasm(char *output_data, int output_data_size,
                              char *testing_data) {
+  int exit_code = 0;
   mkdir("../testing_results", 0751);
   FILE *output_nasm_file = fopen(FILE_DISASSEMBLY_OUTPUT_PATH, "w");
   fwrite(output_data, 1, output_data_size, output_nasm_file);
@@ -110,16 +160,21 @@ int execute_and_compare_nasm(char *output_data, int output_data_size,
 
   FILE *nasm_output_file = popen(nasm_command, "r");
   char nasm_output_buffer[1024];
+
   int nasm_output_size = fread(
       nasm_output_buffer, 1, sizeof(nasm_output_buffer) - 1, nasm_output_file);
-  pclose(nasm_output_file);
+
+  int status = pclose(nasm_output_file);
+
+  if (WIFEXITED(status)) {
+    exit_code = WEXITSTATUS(status);
+  }
 
   nasm_output_buffer[nasm_output_size] = '\0';
 
-  int error_code = 0;
-  if (strcmp(testing_data, nasm_output_buffer) != 0) {
+  if (exit_code == 0 and strcmp(testing_data, nasm_output_buffer) != 0) {
     printf("Expected:%s\n\nGot:%s\n\n", testing_data, nasm_output_buffer);
-    error_code = 1;
+    exit_code = 1;
   }
-  return error_code;
+  return exit_code;
 }
