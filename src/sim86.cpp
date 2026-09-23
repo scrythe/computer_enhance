@@ -12,7 +12,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0041_add_sub_cmp_jnz"
+#define FILE_NAME "listing_0043_immediate_movs"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -65,15 +65,21 @@ int main(int argc, char *argv[]) {
 
   char output_data[2048];
   Parse_File_Result parse_file_result =
-      parse_file(output_data, (u8 *)input_data, input_file_size);
+      parse_file(output_data, (u8 *)input_data, input_file_size, execute);
   int output_data_size = parse_file_result.len;
   int exit_code = parse_file_result.exit_code;
   if (exit_code) {
     return exit_code;
   }
   printf("%s", output_data);
-  int exec_err_val = execute_and_compare_nasm(output_data, output_data_size,
-                                              testing_data, testing_file_size);
+  int exec_err_val = 0;
+  if (!execute) {
+
+    exec_err_val = execute_and_compare_nasm(output_data, output_data_size,
+                                            testing_data, testing_file_size);
+  } else {
+    compare_asm(output_data, output_data_size, testing_data, testing_file_size);
+  }
   if (exec_err_val != 0) {
     return exec_err_val;
   }
@@ -81,19 +87,29 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
+Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size,
+                             bool execute) {
   int exit_code = 0;
   int len = 0;
   char temp_buf[2048];
   int temp_len = 0;
 
-  len += sprintf(buf, "; %s disassembly:\nbits 16\n", FILE_NAME);
+  u8 registers[16] = {};
+
+  if (execute) {
+    len += sprintf(buf, "--- test\\%s execution ---\r\n", FILE_NAME);
+  } else {
+    len += sprintf(buf, "; %s disassembly:\nbits 16\n", FILE_NAME);
+  }
 
   int offset = 0;
   while (offset < input_file_size) {
     instruction decoded;
     Sim86_Decode8086Instruction(input_file_size - offset, input_data + offset,
                                 &decoded);
+
+    int index = decoded.Operands[0].Register.Index - 1;
+    int register_prev_val = registers[2 * index];
 
     const char *mnemonic = Sim86_MnemonicFromOperationType(decoded.Op);
 
@@ -109,6 +125,7 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
       case Operand_Immediate: {
         args_text[i] = temp_buf + temp_len;
         int val = decoded.Operands[i].Immediate.Value;
+        args[i] = val;
         temp_len += sprintf(temp_buf + temp_len, "%d", val);
         temp_buf[temp_len] = '\0';
         temp_len += 1;
@@ -155,6 +172,15 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
       }
     }
 
+    switch (decoded.Op) {
+    case Op_mov: {
+      registers[2 * index] = args[1];
+      break;
+    }
+    default: {
+    }
+    }
+
     char *instruction_args_text = temp_buf + temp_len;
     switch (decoded.Op) {
     case Op_mov:
@@ -198,10 +224,91 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size) {
     }
     }
 
-    len += sprintf(buf + len, "%s %s\n", mnemonic, instruction_args_text);
+    int register_new_val = registers[2 * index];
+    char *register_change_text = (char *)"";
+    if (execute == true and register_prev_val != register_new_val) {
+      register_change_text = temp_buf + temp_len;
+      temp_len += sprintf(temp_buf + temp_len, " ; %s:0x%x->0x%x", args_text[0],
+                          register_prev_val, register_new_val);
+      temp_buf[temp_len] = '\0';
+      temp_len += 1;
+    }
+
+    len += sprintf(buf + len, "%s %s%s \r\n", mnemonic, instruction_args_text,
+                   register_change_text);
     offset += decoded.Size;
   }
+
+  if (execute) {
+    len += sprintf(buf + len, "\r\nFinal registers:\r\n");
+    for (int unsigned i = 0; i < sizeof(registers) / 2; i += 1) {
+
+      register_access reg =
+          register_access{.Index = i + 1, .Offset = 0, .Count = 2};
+      const char *register_name = Sim86_RegisterNameFromOperand(&reg);
+      int register_val = registers[i * 2];
+      len += sprintf(buf + len, "      %s: 0x%04x (%d)\r\n", register_name,
+                     register_val, register_val);
+    }
+    len += sprintf(buf + len, "\r\n");
+  }
   return Parse_File_Result{.len = len, .exit_code = exit_code};
+}
+
+// inspired a bit by zigs testing.expectEqualStrings
+int compare_asm(char *output_data, int output_data_size, char *testing_data,
+                int testing_file_size) {
+  int exit_code = 0;
+
+  int diff_i = 0;
+  int line_count = 0;
+  int line_start = 0;
+  // conveniently diff_i is also the i at end of loop if size is not equal
+  // (otherwise can be used to check no difference)
+  for (; diff_i < testing_file_size and diff_i < output_data_size; diff_i++) {
+    if (testing_data[diff_i] != output_data[diff_i]) {
+      break;
+    }
+    if (testing_data[diff_i] == '\n') {
+      line_start = diff_i + 1;
+      line_count += 1;
+    }
+  }
+
+  int testing_data_line_end = diff_i;
+  for (; testing_data_line_end < testing_file_size; testing_data_line_end++) {
+    if (testing_data[testing_data_line_end] == '\n')
+      break;
+  }
+
+  int output_data_line_end = diff_i;
+  for (; output_data_line_end < output_data_size; output_data_line_end++) {
+    if (output_data[output_data_line_end] == '\n')
+      break;
+  }
+
+  if (testing_file_size != output_data_size or testing_file_size != diff_i) {
+    exit_code = 1;
+    printf("\nfirst difference in line %d:\n", line_count);
+
+    printf("expected:\n");
+    printf("%.*s\n", testing_data_line_end - line_start,
+           testing_data + line_start);
+    for (int i = 0; i < diff_i - line_start; i++) {
+      printf(" ");
+    }
+    printf("^ (0x%02x)\n", *(testing_data + diff_i));
+
+    printf("received:\n");
+    printf("%.*s\n", output_data_line_end - line_start,
+           output_data + line_start);
+    for (int i = 0; i < diff_i - line_start; i++) {
+      printf(" ");
+    }
+    printf("^ (0x%02x)\n", *(output_data + diff_i));
+  }
+
+  return exit_code;
 }
 
 int execute_and_compare_nasm(char *output_data, int output_data_size,
@@ -231,7 +338,7 @@ int execute_and_compare_nasm(char *output_data, int output_data_size,
 
   if (exit_code == 0 and testing_file_size != nasm_output_size and
       memcmp(testing_data, nasm_output_buffer, testing_file_size) != 0) {
-    printf("Expected:%s\n\nGot:%s\n\n", testing_data, nasm_output_buffer);
+    printf("Expected:\n%s\n\nGot:\n%s\n\n", testing_data, nasm_output_buffer);
     exit_code = 1;
   }
   return exit_code;

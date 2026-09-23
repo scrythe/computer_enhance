@@ -25,12 +25,13 @@ fi
 
 mkdir -p build
 
+common_build_flags="-g -Wall -Werror -o build/sim86 src/sim86.cpp build/sim86_shared_debug.a"
 if [[ "${release:-0}" == 1 ]]; then
   echo "[release mode]"
-  compile="clang -g -O2 -Wall -Werror -Wno-unused-variable                 -o build/sim86 src/sim86.cpp build/sim86_shared_debug.a"
+  compile="clang -O2 $common_build_flags"
 else
   echo "[debug mode]"
-  compile="clang -g -O0 -Wall -Werror -Wno-unused-variable -DBUILD_DEBUG=1 -o build/sim86 src/sim86.cpp build/sim86_shared_debug.a"
+  compile="clang -O0 $common_build_flags -Wno-unused-variable -Wno-unused-but-set-variable -DBUILD_DEBUG=1"
 fi
 
 if [[ ! -f "sim86_shared_debug.a" ]]; then
