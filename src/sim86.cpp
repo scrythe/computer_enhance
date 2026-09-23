@@ -12,7 +12,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0043_immediate_movs"
+#define FILE_NAME "listing_0044_register_movs"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -64,31 +64,32 @@ int main(int argc, char *argv[]) {
   }
 
   char output_data[2048];
-  Parse_File_Result parse_file_result =
-      parse_file(output_data, (u8 *)input_data, input_file_size, execute);
-  int output_data_size = parse_file_result.len;
-  int exit_code = parse_file_result.exit_code;
+  Decode_Execute_File_Result decode_execute_file_result = decode_execute_file(
+      output_data, (u8 *)input_data, input_file_size, execute);
+  int output_data_size = decode_execute_file_result.len;
+  int exit_code = decode_execute_file_result.exit_code;
   if (exit_code) {
     return exit_code;
   }
-  printf("%s", output_data);
   int exec_err_val = 0;
   if (!execute) {
-
-    exec_err_val = execute_and_compare_nasm(output_data, output_data_size,
-                                            testing_data, testing_file_size);
+    exec_err_val = compare_decoded_asm(output_data, output_data_size,
+                                       testing_data, testing_file_size);
   } else {
-    compare_asm(output_data, output_data_size, testing_data, testing_file_size);
+    exec_err_val = compare_executed_asm(output_data, output_data_size,
+                                        testing_data, testing_file_size);
   }
   if (exec_err_val != 0) {
     return exec_err_val;
   }
+  printf("%s", output_data);
 
   return 0;
 }
 
-Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size,
-                             bool execute) {
+Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
+                                               int input_file_size,
+                                               bool execute) {
   int exit_code = 0;
   int len = 0;
   char temp_buf[2048];
@@ -117,10 +118,15 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size,
     int args[2];
     for (int i = 0; i < 2; i++) {
       switch (decoded.Operands[i].Type) {
-      case Operand_Register:
+      case Operand_Register: {
+
         args_text[i] =
             Sim86_RegisterNameFromOperand(&decoded.Operands[i].Register);
+        int operand_reg_index = decoded.Operands[i].Register.Index - 1;
+        int val = registers[2 * operand_reg_index];
+        args[i] = val;
         break;
+      }
 
       case Operand_Immediate: {
         args_text[i] = temp_buf + temp_len;
@@ -252,12 +258,12 @@ Parse_File_Result parse_file(char *buf, u8 *input_data, int input_file_size,
     }
     len += sprintf(buf + len, "\r\n");
   }
-  return Parse_File_Result{.len = len, .exit_code = exit_code};
+  return Decode_Execute_File_Result{.len = len, .exit_code = exit_code};
 }
 
 // inspired a bit by zigs testing.expectEqualStrings
-int compare_asm(char *output_data, int output_data_size, char *testing_data,
-                int testing_file_size) {
+int compare_executed_asm(char *output_data, int output_data_size,
+                         char *testing_data, int testing_file_size) {
   int exit_code = 0;
 
   int diff_i = 0;
@@ -289,6 +295,9 @@ int compare_asm(char *output_data, int output_data_size, char *testing_data,
 
   if (testing_file_size != output_data_size or testing_file_size != diff_i) {
     exit_code = 1;
+
+    printf("expected:\n%s\nreceived:\n%s\n", testing_data, output_data);
+
     printf("\nfirst difference in line %d:\n", line_count);
 
     printf("expected:\n");
@@ -311,8 +320,8 @@ int compare_asm(char *output_data, int output_data_size, char *testing_data,
   return exit_code;
 }
 
-int execute_and_compare_nasm(char *output_data, int output_data_size,
-                             char *testing_data, int testing_file_size) {
+int compare_decoded_asm(char *output_data, int output_data_size,
+                        char *testing_data, int testing_file_size) {
   int exit_code = 0;
   mkdir("testing_results", 0751);
   FILE *output_nasm_file = fopen(FILE_DISASSEMBLY_OUTPUT_PATH, "w");
