@@ -12,7 +12,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0044_register_movs"
+#define FILE_NAME "listing_0045_challenge_register_movs"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -95,7 +95,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
   char temp_buf[2048];
   int temp_len = 0;
 
-  u8 registers[16] = {};
+  u16 registers[14] = {};
 
   if (execute) {
     len += sprintf(buf, "--- test\\%s execution ---\r\n", FILE_NAME);
@@ -110,7 +110,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
                                 &decoded);
 
     int index = decoded.Operands[0].Register.Index - 1;
-    int register_prev_val = registers[2 * index];
+    int register_prev_val = registers[index];
 
     const char *mnemonic = Sim86_MnemonicFromOperationType(decoded.Op);
 
@@ -123,7 +123,14 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
         args_text[i] =
             Sim86_RegisterNameFromOperand(&decoded.Operands[i].Register);
         int operand_reg_index = decoded.Operands[i].Register.Index - 1;
-        int val = registers[2 * operand_reg_index];
+        int val;
+        if (decoded.Operands[i].Register.Count == 2) {
+          val = registers[operand_reg_index];
+        } else {
+          val = ((u8 *)registers)[2 * operand_reg_index +
+                                  decoded.Operands[i].Register.Offset];
+        }
+
         args[i] = val;
         break;
       }
@@ -180,7 +187,12 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
 
     switch (decoded.Op) {
     case Op_mov: {
-      registers[2 * index] = args[1];
+      if (decoded.Operands[0].Register.Count == 2) {
+        registers[index] = args[1];
+      } else {
+        ((u8 *)registers)[2 * index + decoded.Operands[0].Register.Offset] =
+            args[1];
+      }
       break;
     }
     default: {
@@ -230,12 +242,15 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     }
     }
 
-    int register_new_val = registers[2 * index];
+    int register_new_val = registers[index];
     char *register_change_text = (char *)"";
     if (execute == true and register_prev_val != register_new_val) {
+      register_access reg_word = register_access{
+          .Index = decoded.Operands[0].Register.Index, .Count = 2};
+      const char *reg_word_name = Sim86_RegisterNameFromOperand(&reg_word);
       register_change_text = temp_buf + temp_len;
-      temp_len += sprintf(temp_buf + temp_len, " ; %s:0x%x->0x%x", args_text[0],
-                          register_prev_val, register_new_val);
+      temp_len += sprintf(temp_buf + temp_len, " ; %s:0x%x->0x%x",
+                          reg_word_name, register_prev_val, register_new_val);
       temp_buf[temp_len] = '\0';
       temp_len += 1;
     }
@@ -248,13 +263,14 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
   if (execute) {
     len += sprintf(buf + len, "\r\nFinal registers:\r\n");
     for (int unsigned i = 0; i < sizeof(registers) / 2; i += 1) {
-
       register_access reg =
           register_access{.Index = i + 1, .Offset = 0, .Count = 2};
-      const char *register_name = Sim86_RegisterNameFromOperand(&reg);
-      int register_val = registers[i * 2];
-      len += sprintf(buf + len, "      %s: 0x%04x (%d)\r\n", register_name,
-                     register_val, register_val);
+      int register_val = registers[i];
+      if (register_val != 0) {
+        const char *register_name = Sim86_RegisterNameFromOperand(&reg);
+        len += sprintf(buf + len, "      %s: 0x%04x (%d)\r\n", register_name,
+                       register_val, register_val);
+      }
     }
     len += sprintf(buf + len, "\r\n");
   }
