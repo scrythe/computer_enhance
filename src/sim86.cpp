@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <stdint.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -12,12 +13,20 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0045_challenge_register_movs"
+#define FILE_NAME "listing_0046_add_sub_cmp"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
 #define FILE_TEST_EXECUTION_PATH                                               \
   "computer_enhance/perfaware/part1/" FILE_NAME ".txt"
+
+enum Flags {
+  P,
+  S,
+  Z,
+};
+
+const u8 FlagsCharMap[sizeof(Flags)] = {'P', 'S', 'Z'};
 
 int main(int argc, char *argv[]) {
   u32 version = Sim86_GetVersion();
@@ -96,6 +105,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
   int temp_len = 0;
 
   u16 registers[14] = {};
+  bool flags[sizeof(Flags)];
 
   if (execute) {
     len += sprintf(buf, "--- test\\%s execution ---\r\n", FILE_NAME);
@@ -111,6 +121,8 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
 
     int index = decoded.Operands[0].Register.Index - 1;
     int register_prev_val = registers[index];
+    bool flags_prev_val[sizeof(Flags)];
+    memcpy(flags_prev_val, flags, sizeof(flags));
 
     const char *mnemonic = Sim86_MnemonicFromOperationType(decoded.Op);
 
@@ -185,15 +197,42 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       }
     }
 
+    int16_t res = 0;
     switch (decoded.Op) {
     case Op_mov: {
+      res = args[1];
+      break;
+    }
+    case Op_add: {
+      bool overflow =
+          __builtin_add_overflow((int16_t)args[0], (int16_t)args[1], &res);
+      break;
+    }
+    case Op_sub:
+    case Op_cmp: {
+      bool overflow =
+          __builtin_sub_overflow((int16_t)args[0], (int16_t)args[1], &res);
+
+      u8 number_of_lower_bits = __builtin_popcount(res & 0x00FF);
+      flags[(Flags)P] = number_of_lower_bits % 2 == 0;
+
+      flags[(Flags)S] = res < 0;
+      flags[(Flags)Z] = res == 0;
+    }
+    default: {
+    }
+    }
+
+    switch (decoded.Op) {
+    case Op_mov:
+    case Op_add:
+    case Op_sub: {
       if (decoded.Operands[0].Register.Count == 2) {
-        registers[index] = args[1];
+        registers[index] = res;
       } else {
         ((u8 *)registers)[2 * index + decoded.Operands[0].Register.Offset] =
-            args[1];
+            res;
       }
-      break;
     }
     default: {
     }
@@ -249,14 +288,36 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
           .Index = decoded.Operands[0].Register.Index, .Count = 2};
       const char *reg_word_name = Sim86_RegisterNameFromOperand(&reg_word);
       register_change_text = temp_buf + temp_len;
-      temp_len += sprintf(temp_buf + temp_len, " ; %s:0x%x->0x%x",
-                          reg_word_name, register_prev_val, register_new_val);
+      temp_len += sprintf(temp_buf + temp_len, " %s:0x%x->0x%x", reg_word_name,
+                          register_prev_val, register_new_val);
       temp_buf[temp_len] = '\0';
       temp_len += 1;
     }
 
-    len += sprintf(buf + len, "%s %s%s \r\n", mnemonic, instruction_args_text,
-                   register_change_text);
+    char *flags_change_text = (char *)"";
+    if (memcmp(flags_prev_val, flags, sizeof(flags)) != 0) {
+      flags_change_text = temp_buf + temp_len;
+      temp_len += sprintf(temp_buf + temp_len, " flags:");
+      for (int i = 0; i < sizeof(flags); i++) {
+        if (flags_prev_val[i]) {
+          temp_buf[temp_len] = FlagsCharMap[i];
+          temp_len += 1;
+        }
+      }
+      temp_len += sprintf(temp_buf + temp_len, "->");
+      for (int i = 0; i < sizeof(flags); i++) {
+        if (flags[i]) {
+          temp_buf[temp_len] = FlagsCharMap[i];
+          temp_len += 1;
+        }
+      }
+      temp_buf[temp_len] = '\0';
+      temp_len += 1;
+    }
+
+    len +=
+        sprintf(buf + len, "%s %s ;%s%s \r\n", mnemonic, instruction_args_text,
+                register_change_text, flags_change_text);
     offset += decoded.Size;
   }
 
@@ -272,7 +333,17 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
                        register_val, register_val);
       }
     }
-    len += sprintf(buf + len, "\r\n");
+    bool zero_flags[2];
+    if (memcmp(flags, zero_flags, sizeof(flags)) != 0) {
+      len += sprintf(buf + len, "   flags: ");
+      for (int i = 0; i < sizeof(flags); i++) {
+        if (flags[i]) {
+          buf[len] = FlagsCharMap[i];
+          len += 1;
+        }
+      }
+    }
+    len += sprintf(buf + len, "\r\n\r\n");
   }
   return Decode_Execute_File_Result{.len = len, .exit_code = exit_code};
 }
