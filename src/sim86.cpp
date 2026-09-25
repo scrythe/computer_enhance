@@ -14,7 +14,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0047_challenge_flags"
+#define FILE_NAME "listing_0048_ip_register"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -128,6 +128,9 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     int index = decoded.Operands[0].Register.Index - 1;
     int register_prev_val = registers[index];
     bool flags_prev_val[sizeof(FlagsCharMap)];
+    int ip_prev_val = offset;
+    // can change later with jump instruction
+    int ip_new_val = offset + decoded.Size;
     memcpy(flags_prev_val, flags, sizeof(flags));
 
     const char *mnemonic = Sim86_MnemonicFromOperationType(decoded.Op);
@@ -339,10 +342,19 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       temp_len += 1;
     }
 
-    len +=
-        sprintf(buf + len, "%s %s ;%s%s \r\n", mnemonic, instruction_args_text,
-                register_change_text, flags_change_text);
-    offset += decoded.Size;
+    char *ip_change_text = (char *)"";
+    if (ip_prev_val != ip_new_val) {
+      ip_change_text = temp_buf + temp_len;
+      temp_len += sprintf(temp_buf + temp_len, " ip:0x%x->0x%x", ip_prev_val,
+                          ip_new_val);
+      temp_buf[temp_len] = '\0';
+      temp_len += 1;
+    }
+
+    len += sprintf(buf + len, "%s %s ;%s%s%s \r\n", mnemonic,
+                   instruction_args_text, register_change_text, ip_change_text,
+                   flags_change_text);
+    offset = ip_new_val;
   }
 
   if (execute) {
@@ -356,6 +368,9 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
         len += sprintf(buf + len, "      %s: 0x%04x (%d)\r\n", register_name,
                        register_val, register_val);
       }
+    }
+    if (offset != 0) {
+      len += sprintf(buf + len, "      ip: 0x%04x (%d)\r\n", offset, offset);
     }
     bool zero_flags[2];
     if (memcmp(flags, zero_flags, sizeof(flags)) != 0) {
