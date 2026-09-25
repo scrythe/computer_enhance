@@ -14,7 +14,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0048_ip_register"
+#define FILE_NAME "listing_0049_conditional_jumps"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -260,6 +260,19 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
         ((u8 *)registers)[2 * index + decoded.Operands[0].Register.Offset] =
             res;
       }
+      break;
+    }
+    case Op_jne: {
+      if (!flags[(Flags)Z]) {
+        int jump_offset = decoded.Operands[0].Immediate.Value;
+        ip_new_val += jump_offset;
+      }
+      // if (!flags[@intFromEnum(Flags.Z)]) {
+      //     const offset_i16: i16 =
+      //     @truncate(decoded.Operands[0].data.Immediate.Value); const
+      //     new_ip_reg_i16: i16 = @intCast(new_ip_reg); new_ip_reg =
+      //     @bitCast(new_ip_reg_i16 + offset_i16);
+      // }
     }
     default: {
     }
