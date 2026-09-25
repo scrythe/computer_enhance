@@ -14,7 +14,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0049_conditional_jumps"
+#define FILE_NAME "listing_0050_challenge_jumps"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -22,6 +22,8 @@
   "computer_enhance/perfaware/part1/" FILE_NAME ".txt"
 
 #define UINT4_MAX 15
+
+#define CX_REG_INDEX 2
 
 enum Flags {
   C,
@@ -262,18 +264,50 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       }
       break;
     }
+
+    case Op_je: {
+      if (flags[(Flags)Z]) {
+        int jump_offset = decoded.Operands[0].Immediate.Value;
+        ip_new_val += jump_offset;
+      }
+      break;
+    }
+    case Op_jb: {
+      if (flags[(Flags)C]) {
+        int jump_offset = decoded.Operands[0].Immediate.Value;
+        ip_new_val += jump_offset;
+      }
+      break;
+    }
+    case Op_jbe: {
+      break;
+    }
+    case Op_jp: {
+      if (flags[(Flags)P]) {
+        int jump_offset = decoded.Operands[0].Immediate.Value;
+        ip_new_val += jump_offset;
+      }
+      break;
+    }
     case Op_jne: {
       if (!flags[(Flags)Z]) {
         int jump_offset = decoded.Operands[0].Immediate.Value;
         ip_new_val += jump_offset;
       }
-      // if (!flags[@intFromEnum(Flags.Z)]) {
-      //     const offset_i16: i16 =
-      //     @truncate(decoded.Operands[0].data.Immediate.Value); const
-      //     new_ip_reg_i16: i16 = @intCast(new_ip_reg); new_ip_reg =
-      //     @bitCast(new_ip_reg_i16 + offset_i16);
-      // }
+      break;
     }
+    case Op_loopnz: {
+      register_prev_val = registers[CX_REG_INDEX];
+      registers[CX_REG_INDEX] -= 1;
+      index = CX_REG_INDEX;
+      // register_new_val = registers[CX_REG_INDEX];
+      if (registers[CX_REG_INDEX] != 0 and !flags[(Flags)Z]) {
+        int jump_offset = decoded.Operands[0].Immediate.Value;
+        ip_new_val += jump_offset;
+      }
+      break;
+    }
+
     default: {
     }
     }
@@ -324,8 +358,8 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     int register_new_val = registers[index];
     char *register_change_text = (char *)"";
     if (execute == true and register_prev_val != register_new_val) {
-      register_access reg_word = register_access{
-          .Index = decoded.Operands[0].Register.Index, .Count = 2};
+      register_access reg_word =
+          register_access{.Index = (u32)index + 1, .Count = 2};
       const char *reg_word_name = Sim86_RegisterNameFromOperand(&reg_word);
       register_change_text = temp_buf + temp_len;
       temp_len += sprintf(temp_buf + temp_len, " %s:0x%x->0x%x", reg_word_name,
