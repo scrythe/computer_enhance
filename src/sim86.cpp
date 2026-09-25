@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <cstdlib>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,20 +14,25 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0046_add_sub_cmp"
+#define FILE_NAME "listing_0047_challenge_flags"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
 #define FILE_TEST_EXECUTION_PATH                                               \
   "computer_enhance/perfaware/part1/" FILE_NAME ".txt"
 
+#define UINT4_MAX 15
+
 enum Flags {
+  C,
   P,
+  A,
   S,
+  O,
   Z,
 };
 
-const u8 FlagsCharMap[sizeof(Flags)] = {'P', 'S', 'Z'};
+const u8 FlagsCharMap[6] = {'C', 'P', 'A', 'S', 'O', 'Z'};
 
 int main(int argc, char *argv[]) {
   u32 version = Sim86_GetVersion();
@@ -105,7 +111,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
   int temp_len = 0;
 
   u16 registers[14] = {};
-  bool flags[sizeof(Flags)];
+  bool flags[sizeof(FlagsCharMap)];
 
   if (execute) {
     len += sprintf(buf, "--- test\\%s execution ---\r\n", FILE_NAME);
@@ -121,7 +127,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
 
     int index = decoded.Operands[0].Register.Index - 1;
     int register_prev_val = registers[index];
-    bool flags_prev_val[sizeof(Flags)];
+    bool flags_prev_val[sizeof(FlagsCharMap)];
     memcpy(flags_prev_val, flags, sizeof(flags));
 
     const char *mnemonic = Sim86_MnemonicFromOperationType(decoded.Op);
@@ -206,17 +212,35 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     case Op_add: {
       bool overflow =
           __builtin_add_overflow((int16_t)args[0], (int16_t)args[1], &res);
+      uint16_t unsigned_res;
+      bool unsigned_overflow = __builtin_add_overflow(
+          (uint16_t)args[0], (uint16_t)args[1], &unsigned_res);
+      bool u4_overflow = ((args[0] & 0xF) + (args[1] & 0xF)) > UINT4_MAX;
+      u8 number_of_lower_bits = __builtin_popcount(res & 0x00FF);
+
+      flags[(Flags)C] = unsigned_overflow;
+      flags[(Flags)P] = number_of_lower_bits % 2 == 0;
+      flags[(Flags)A] = u4_overflow;
+      flags[(Flags)S] = res < 0;
+      flags[(Flags)O] = overflow;
+      flags[(Flags)Z] = res == 0;
       break;
     }
     case Op_sub:
     case Op_cmp: {
       bool overflow =
           __builtin_sub_overflow((int16_t)args[0], (int16_t)args[1], &res);
-
+      uint16_t unsigned_res;
+      bool unsigned_overflow = __builtin_sub_overflow(
+          (uint16_t)args[0], (uint16_t)args[1], &unsigned_res);
+      bool u4_overflow = (args[0] & 0xF) < (args[1] & 0xF);
       u8 number_of_lower_bits = __builtin_popcount(res & 0x00FF);
-      flags[(Flags)P] = number_of_lower_bits % 2 == 0;
 
+      flags[(Flags)C] = unsigned_overflow;
+      flags[(Flags)P] = number_of_lower_bits % 2 == 0;
+      flags[(Flags)A] = u4_overflow;
       flags[(Flags)S] = res < 0;
+      flags[(Flags)O] = overflow;
       flags[(Flags)Z] = res == 0;
     }
     default: {
