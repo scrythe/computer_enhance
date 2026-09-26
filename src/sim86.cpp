@@ -14,7 +14,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0055_challenge_rectangle"
+#define FILE_NAME "listing_0056_estimating_cycles"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -39,6 +39,23 @@ enum Flags {
 
 const u8 FlagsCharMap[6] = {'C', 'P', 'A', 'S', 'O', 'Z'};
 
+enum EffectAddrClock {
+  DispOnly = 6,
+  BaseIndexOnly = 5,
+  DispAndBaseIndex = 9,
+  BaseAndIndex1 = 7,
+  BaseAndIndex2 = 8,
+  DispAndBaseAndIndex1 = 11,
+  DispAndBaseAndIndex2 = 12,
+};
+
+enum EffecAddrReg { BX = 2, SP = 5, BP = 6, SI = 7, DI = 8 };
+
+enum ClockCyclesList { RegReg, RegMem, MemReg, RegImm, MemImm };
+
+const int MovCyclesList[5] = {2, 8, 9, 4, 10};
+const int AddCyclesList[5] = {3, 9, 16, 4, 17};
+
 int main(int argc, char *argv[]) {
   u32 version = Sim86_GetVersion();
   if (version != SIM86_VERSION) {
@@ -47,11 +64,17 @@ int main(int argc, char *argv[]) {
 
   bool execute = false;
   bool output_image = false;
+  bool show_clock_cycles = false;
+  bool is_8088 = false;
   for (int i = 0; i < argc; i++) {
     if (strcmp(argv[i], "--execute") == 0) {
       execute = true;
     } else if (strcmp(argv[i], "--output_image") == 0) {
       output_image = true;
+    } else if (strcmp(argv[i], "--show_clock_cycles") == 0) {
+      show_clock_cycles = true;
+    } else if (strcmp(argv[i], "--is_8088") == 0) {
+      is_8088 = true;
     }
   }
 
@@ -91,9 +114,9 @@ int main(int argc, char *argv[]) {
   int max_output_size =
       2 * testing_file_size > 200 ? 2 * testing_file_size : 2048;
   char *output_data = (char *)malloc(max_output_size);
-  // char output_data[2048];
-  Decode_Execute_File_Result decode_execute_file_result = decode_execute_file(
-      output_data, (u8 *)input_data, input_file_size, execute, output_image);
+  Decode_Execute_File_Result decode_execute_file_result =
+      decode_execute_file(output_data, (u8 *)input_data, input_file_size,
+                          execute, output_image, show_clock_cycles, is_8088);
   int output_data_size = decode_execute_file_result.len;
   int exit_code = decode_execute_file_result.exit_code;
   if (exit_code) {
@@ -104,8 +127,9 @@ int main(int argc, char *argv[]) {
     exec_err_val = compare_decoded_asm(output_data, output_data_size,
                                        testing_data, testing_file_size);
   } else {
-    exec_err_val = compare_executed_asm(output_data, output_data_size,
-                                        testing_data, testing_file_size);
+    exec_err_val =
+        compare_executed_asm(show_clock_cycles, is_8088, output_data,
+                             output_data_size, testing_data, testing_file_size);
   }
   if (exec_err_val != 0) {
     return exec_err_val;
@@ -121,8 +145,9 @@ int main(int argc, char *argv[]) {
 
 Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
                                                int input_file_size,
-                                               bool execute,
-                                               bool output_image) {
+                                               bool execute, bool output_image,
+                                               bool show_clock_cycles,
+                                               bool is_8088) {
   int exit_code = 0;
   int len = 0;
   char temp_buf[2048];
@@ -139,6 +164,8 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
   }
 
   int offset = 0;
+  int clocks_total = 0;
+  int clocks_addition = 0;
   while (offset < input_file_size) {
     instruction decoded;
     Sim86_Decode8086Instruction(input_file_size - offset, input_data + offset,
@@ -156,6 +183,8 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
 
     const char *args_text[2];
     int args[2];
+    int effect_addr_clock = 0;
+    int effect_addr_val[2];
     for (int i = 0; i < 2; i++) {
       switch (decoded.Operands[i].Type) {
       case Operand_Register: {
@@ -200,13 +229,11 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
         if (effec_addr.Terms[1].Register.Index != 0) {
           reg2_val = registers[effec_addr.Terms[1].Register.Index - 1];
         }
-        args[i] = reg1_val + reg2_val + displacement;
-        if (i == 1) {
-          if (decoded.Flags == Inst_Wide) {
-            args[i] = ((u16 *)memory)[args[i] / 2];
-          } else {
-            args[i] = memory[args[i]];
-          }
+        effect_addr_val[i] = reg1_val + reg2_val + displacement;
+        if (decoded.Flags == Inst_Wide) {
+          args[i] = ((u16 *)memory)[effect_addr_val[i] / 2];
+        } else {
+          args[i] = memory[effect_addr_val[i]];
         }
 
         args_text[i] = temp_buf + temp_len;
@@ -223,12 +250,62 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
         temp_buf[temp_len] = '\0';
         temp_len += 1;
 
+        if (effec_addr.Terms[0].Register.Index != 0 and
+            effec_addr.Terms[1].Register.Index != 0 and
+            effec_addr.Displacement != 0) {
+          bool is_bp_and_di =
+              (effec_addr.Terms[0].Register.Index == (EffecAddrReg)BP) and
+              (effec_addr.Terms[1].Register.Index == (EffecAddrReg)DI);
+          // bool is_bx_and_si =
+          //     (effec_addr.Terms[0].Register.Index == (EffecAddrReg)BX) and
+          //     (effec_addr.Terms[1].Register.Index == (EffecAddrReg)SI);
+          if (is_bp_and_di) {
+            effect_addr_clock = (EffectAddrClock)DispAndBaseAndIndex1;
+          } else {
+            effect_addr_clock = (EffectAddrClock)DispAndBaseAndIndex2;
+          }
+        } else if (effec_addr.Terms[0].Register.Index != 0 and
+                   effec_addr.Terms[1].Register.Index != 0) {
+          bool is_bp_and_di =
+              (effec_addr.Terms[0].Register.Index == (EffecAddrReg)BP) and
+              (effec_addr.Terms[1].Register.Index == (EffecAddrReg)DI);
+          if (is_bp_and_di) {
+            effect_addr_clock = (EffectAddrClock)BaseAndIndex1;
+          } else {
+            effect_addr_clock = (EffectAddrClock)BaseAndIndex2;
+          }
+        } else if (effec_addr.Terms[0].Register.Index != 0 and
+                   effec_addr.Displacement != 0) {
+          effect_addr_clock = (EffectAddrClock)DispAndBaseIndex;
+        } else if (effec_addr.Terms[0].Register.Index != 0) {
+          effect_addr_clock = (EffectAddrClock)BaseIndexOnly;
+        } else {
+          effect_addr_clock = (EffectAddrClock)DispOnly;
+        }
         break;
       }
 
       case Operand_None: {
       }
       }
+    }
+
+    ClockCyclesList clock_cycles_variant;
+    if ((decoded.Operands[0].Type == Operand_Register) and
+        (decoded.Operands[1].Type == Operand_Register)) {
+      clock_cycles_variant = RegReg;
+    } else if ((decoded.Operands[0].Type == Operand_Register) and
+               (decoded.Operands[1].Type == Operand_Memory)) {
+      clock_cycles_variant = RegMem;
+    } else if ((decoded.Operands[0].Type == Operand_Memory) and
+               (decoded.Operands[1].Type == Operand_Register)) {
+      clock_cycles_variant = MemReg;
+    } else if ((decoded.Operands[0].Type == Operand_Register) and
+               (decoded.Operands[1].Type == Operand_Immediate)) {
+      clock_cycles_variant = RegImm;
+    } else if ((decoded.Operands[0].Type == Operand_Memory) and
+               (decoded.Operands[1].Type == Operand_Immediate)) {
+      clock_cycles_variant = MemImm;
     }
 
     char *size = (char *)"";
@@ -245,6 +322,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     switch (decoded.Op) {
     case Op_mov: {
       res = args[1];
+      clocks_addition = MovCyclesList[clock_cycles_variant];
       break;
     }
     case Op_add: {
@@ -262,6 +340,8 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       flags[(Flags)S] = res < 0;
       flags[(Flags)O] = overflow;
       flags[(Flags)Z] = res == 0;
+
+      clocks_addition = AddCyclesList[clock_cycles_variant];
       break;
     }
     case Op_sub:
@@ -303,9 +383,9 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       }
       case Operand_Memory: {
         if (decoded.Flags == Inst_Wide) {
-          ((u16 *)memory)[args[0] / 2] = res;
+          ((u16 *)memory)[effect_addr_val[0] / 2] = res;
         } else {
-          memory[args[0]] = res;
+          memory[effect_addr_val[0]] = res;
         }
         break;
       }
@@ -469,9 +549,33 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       temp_len += 1;
     }
 
-    len += sprintf(buf + len, "%s %s ;%s%s%s \r\n", mnemonic,
-                   instruction_args_text, register_change_text, ip_change_text,
-                   flags_change_text);
+    char *clocks_explanation = (char *)"";
+    if (effect_addr_clock != 0) {
+      clocks_explanation = temp_buf + temp_len;
+      temp_len += sprintf(temp_buf + temp_len, " (%d + %dea)", clocks_addition,
+                          effect_addr_clock);
+      temp_buf[temp_len] = '\0';
+      temp_len += 1;
+    }
+
+    clocks_addition += effect_addr_clock;
+    clocks_total += clocks_addition;
+    char *clocks_message = (char *)"";
+    if (show_clock_cycles) {
+      clocks_message = temp_buf + temp_len;
+      temp_len += sprintf(temp_buf + temp_len, " Clocks: +%d = %d%s |",
+                          clocks_addition, clocks_total, clocks_explanation);
+      temp_buf[temp_len] = '\0';
+      temp_len += 1;
+    }
+
+    char *only_space_if_8086 = (char *)" ";
+    if (is_8088) {
+      only_space_if_8086 = (char *)"";
+    }
+    len += sprintf(buf + len, "%s %s ;%s%s%s%s%s\r\n", mnemonic,
+                   instruction_args_text, clocks_message, register_change_text,
+                   ip_change_text, flags_change_text, only_space_if_8086);
     temp_len = 0;
     offset = ip_new_val;
   }
@@ -514,16 +618,48 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
 }
 
 // inspired a bit by zigs testing.expectEqualStrings
-int compare_executed_asm(char *output_data, int output_data_size,
+int compare_executed_asm(bool show_clock_cycles, bool is_8088,
+                         char *output_data, int output_data_size,
                          char *testing_data, int testing_file_size) {
   int exit_code = 0;
+
+  int testing_start = 0;
+  int testing_end = 0;
+  // if 8088, then will do it two times
+  if (show_clock_cycles && is_8088) {
+    for (; testing_start < testing_file_size; testing_start++) {
+      if (testing_data[testing_start] == '-')
+        break;
+    }
+    for (testing_end = testing_start; testing_end < testing_file_size;
+         testing_end++) {
+      if (testing_data[testing_end] == '*')
+        break;
+    }
+    testing_end -= 2;
+  }
+  if (show_clock_cycles) {
+    for (testing_start = testing_end; testing_start < testing_file_size;
+         testing_start++) {
+      if (testing_data[testing_start] == '-')
+        break;
+    }
+    for (testing_end = testing_start; testing_end < testing_file_size;
+         testing_end++) {
+      if (testing_data[testing_end] == '*')
+        break;
+    }
+    testing_end -= 2;
+  }
+
+  testing_data += testing_start;
 
   int diff_i = 0;
   int line_count = 0;
   int line_start = 0;
   // conveniently diff_i is also the i at end of loop if size is not equal
   // (otherwise can be used to check no difference)
-  for (; diff_i < testing_file_size and diff_i < output_data_size; diff_i++) {
+  for (; diff_i < testing_end and diff_i < output_data_size; diff_i++) {
     if (testing_data[diff_i] != output_data[diff_i]) {
       break;
     }
@@ -534,7 +670,7 @@ int compare_executed_asm(char *output_data, int output_data_size,
   }
 
   int testing_data_line_end = diff_i;
-  for (; testing_data_line_end < testing_file_size; testing_data_line_end++) {
+  for (; testing_data_line_end < testing_end; testing_data_line_end++) {
     if (testing_data[testing_data_line_end] == '\n')
       break;
   }
@@ -545,7 +681,8 @@ int compare_executed_asm(char *output_data, int output_data_size,
       break;
   }
 
-  if (testing_file_size != output_data_size or testing_file_size != diff_i) {
+  if ((testing_end - testing_start) != output_data_size or
+      (testing_end - testing_start) != diff_i) {
     exit_code = 1;
 
     int bla = strlen(testing_data);
