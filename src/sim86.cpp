@@ -549,16 +549,43 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       temp_len += 1;
     }
 
-    char *clocks_explanation = (char *)"";
-    if (effect_addr_clock != 0) {
-      clocks_explanation = temp_buf + temp_len;
-      temp_len += sprintf(temp_buf + temp_len, " (%d + %dea)", clocks_addition,
-                          effect_addr_clock);
+    int transfers = 0;
+    if (decoded.Operands[0].Type == Operand_Memory) {
+      switch (decoded.Op) {
+      case Op_mov:
+        transfers = 1;
+        break;
+      case Op_add:
+        transfers = 2;
+        break;
+      default: {
+      }
+      }
+    } else if (decoded.Operands[1].Type == Operand_Memory) {
+      transfers = 1;
+    }
+
+    char *penalty_cycles_text = (char *)"";
+    int penalty_cycles = 0;
+    if (is_8088) {
+      penalty_cycles = 4 * transfers;
+      penalty_cycles_text = temp_buf + temp_len;
+      temp_len += sprintf(temp_buf + temp_len, " + %dp", penalty_cycles);
       temp_buf[temp_len] = '\0';
       temp_len += 1;
     }
 
-    clocks_addition += effect_addr_clock;
+    char *clocks_explanation = (char *)"";
+    if (effect_addr_clock != 0) {
+      clocks_explanation = temp_buf + temp_len;
+      temp_len +=
+          sprintf(temp_buf + temp_len, " (%d + %dea%s)", clocks_addition,
+                  effect_addr_clock, penalty_cycles_text);
+      temp_buf[temp_len] = '\0';
+      temp_len += 1;
+    }
+
+    clocks_addition += effect_addr_clock + penalty_cycles;
     clocks_total += clocks_addition;
     char *clocks_message = (char *)"";
     if (show_clock_cycles) {
@@ -606,7 +633,9 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       }
       len += sprintf(buf + len, "\r\n");
     }
-    len += sprintf(buf + len, "\r\n");
+    if (!is_8088) {
+      len += sprintf(buf + len, "\r\n");
+    }
   }
   if (output_image) {
     mkdir("results", 0751);
@@ -624,9 +653,9 @@ int compare_executed_asm(bool show_clock_cycles, bool is_8088,
   int exit_code = 0;
 
   int testing_start = 0;
-  int testing_end = 0;
-  // if 8088, then will do it two times
-  if (show_clock_cycles && is_8088) {
+  int testing_end = testing_file_size;
+
+  if (show_clock_cycles) {
     for (; testing_start < testing_file_size; testing_start++) {
       if (testing_data[testing_start] == '-')
         break;
@@ -638,7 +667,8 @@ int compare_executed_asm(bool show_clock_cycles, bool is_8088,
     }
     testing_end -= 2;
   }
-  if (show_clock_cycles) {
+  // if 8088, then will do it two times
+  if (show_clock_cycles && is_8088) {
     for (testing_start = testing_end; testing_start < testing_file_size;
          testing_start++) {
       if (testing_data[testing_start] == '-')
@@ -649,7 +679,6 @@ int compare_executed_asm(bool show_clock_cycles, bool is_8088,
       if (testing_data[testing_end] == '*')
         break;
     }
-    testing_end -= 2;
   }
 
   testing_data += testing_start;
