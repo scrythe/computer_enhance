@@ -14,7 +14,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0051_memory_mov"
+#define FILE_NAME "listing_0053_add_loop_challenge"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -224,8 +224,8 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     }
 
     char *size = (char *)"";
-    if (decoded.Operands[0].Type == Operand_Memory and
-        decoded.Operands[1].Type == Operand_Immediate) {
+    if (decoded.Operands[0].Type == Operand_Memory) {
+      // and decoded.Operands[1].Type == Operand_Immediate) {
       if (decoded.Flags == Inst_Wide) {
         size = (char *)"word ";
       } else {
@@ -352,6 +352,10 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
 
     default: {
     }
+    }
+
+    if (!execute) {
+      ip_new_val = offset + decoded.Size;
     }
 
     char *instruction_args_text = temp_buf + temp_len;
@@ -567,9 +571,27 @@ int compare_decoded_asm(char *output_data, int output_data_size,
 
   nasm_output_buffer[nasm_output_size] = '\0';
 
-  if (exit_code == 0 and testing_file_size != nasm_output_size and
-      memcmp(testing_data, nasm_output_buffer, testing_file_size) != 0) {
-    printf("Expected:\n%s\n\nGot:\n%s\n\n", testing_data, nasm_output_buffer);
+  if (exit_code == 0 and
+      (testing_file_size != nasm_output_size or
+       memcmp(testing_data, nasm_output_buffer, testing_file_size) != 0)) {
+    printf("Expected:\n");
+    for (int i = 0; i < testing_file_size; i++) {
+      u8 byte = testing_data[i];
+      for (int bit_i = 7; bit_i >= 0; bit_i--) {
+        int bit = (byte >> bit_i) & 1;
+        printf("%d", bit);
+      }
+      printf(" ");
+    }
+    printf("\nReceived:\n");
+    for (int i = 0; i < nasm_output_size; i++) {
+      u8 byte = nasm_output_buffer[i];
+      for (int bit_i = 7; bit_i >= 0; bit_i--) {
+        int bit = (byte >> bit_i) & 1;
+        printf("%d", bit);
+      }
+      printf(" ");
+    }
     exit_code = 1;
   }
   return exit_code;
