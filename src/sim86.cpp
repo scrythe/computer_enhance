@@ -14,10 +14,11 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0053_add_loop_challenge"
+#define FILE_NAME "listing_0055_challenge_rectangle"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
+#define FILE_IMAGE_OUTPUT_PATH "results/" FILE_NAME "_image.data"
 #define FILE_TEST_EXECUTION_PATH                                               \
   "computer_enhance/perfaware/part1/" FILE_NAME ".txt"
 
@@ -45,9 +46,12 @@ int main(int argc, char *argv[]) {
   }
 
   bool execute = false;
-  if (argc > 1) {
-    if (strcmp(argv[1], "--execute") == 0) {
+  bool output_image = false;
+  for (int i = 0; i < argc; i++) {
+    if (strcmp(argv[i], "--execute") == 0) {
       execute = true;
+    } else if (strcmp(argv[i], "--output_image") == 0) {
+      output_image = true;
     }
   }
 
@@ -84,9 +88,12 @@ int main(int argc, char *argv[]) {
     testing_file_size = input_file_size;
   }
 
-  char output_data[2048];
+  int max_output_size =
+      2 * testing_file_size > 200 ? 2 * testing_file_size : 2048;
+  char *output_data = (char *)malloc(max_output_size);
+  // char output_data[2048];
   Decode_Execute_File_Result decode_execute_file_result = decode_execute_file(
-      output_data, (u8 *)input_data, input_file_size, execute);
+      output_data, (u8 *)input_data, input_file_size, execute, output_image);
   int output_data_size = decode_execute_file_result.len;
   int exit_code = decode_execute_file_result.exit_code;
   if (exit_code) {
@@ -114,7 +121,8 @@ int main(int argc, char *argv[]) {
 
 Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
                                                int input_file_size,
-                                               bool execute) {
+                                               bool execute,
+                                               bool output_image) {
   int exit_code = 0;
   int len = 0;
   char temp_buf[2048];
@@ -338,6 +346,18 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       }
       break;
     }
+
+    case Op_loop: {
+      changed_register_index = CX_REG_INDEX;
+      register_prev_val = registers[changed_register_index];
+      register_prev_val = registers[CX_REG_INDEX];
+      registers[CX_REG_INDEX] -= 1;
+      if (registers[CX_REG_INDEX] != 0) {
+        int jump_offset = decoded.Operands[0].Immediate.Value;
+        ip_new_val += jump_offset;
+      }
+      break;
+    }
     case Op_loopnz: {
       changed_register_index = CX_REG_INDEX;
       register_prev_val = registers[changed_register_index];
@@ -452,6 +472,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     len += sprintf(buf + len, "%s %s ;%s%s%s \r\n", mnemonic,
                    instruction_args_text, register_change_text, ip_change_text,
                    flags_change_text);
+    temp_len = 0;
     offset = ip_new_val;
   }
 
@@ -482,6 +503,12 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       len += sprintf(buf + len, "\r\n");
     }
     len += sprintf(buf + len, "\r\n");
+  }
+  if (output_image) {
+    mkdir("results", 0751);
+    FILE *output_image_file = fopen(FILE_IMAGE_OUTPUT_PATH, "w");
+    fwrite(memory, 1, MEMORY_SIZE, output_image_file);
+    fclose(output_image_file);
   }
   return Decode_Execute_File_Result{.len = len, .exit_code = exit_code};
 }
