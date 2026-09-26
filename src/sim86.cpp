@@ -14,7 +14,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0050_challenge_jumps"
+#define FILE_NAME "listing_0051_memory_mov"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -24,6 +24,8 @@
 #define UINT4_MAX 15
 
 #define CX_REG_INDEX 2
+
+const int MEMORY_SIZE = 2 << 15;
 
 enum Flags {
   C,
@@ -58,6 +60,7 @@ int main(int argc, char *argv[]) {
   int input_file_size = ftell(input_file);
   rewind(input_file);
   char *input_data = (char *)malloc(input_file_size + 1);
+  input_data[input_file_size] = '\0';
   fread(input_data, 1, input_file_size, input_file);
   fclose(input_file);
 
@@ -73,6 +76,7 @@ int main(int argc, char *argv[]) {
     testing_file_size = ftell(testing_file);
     rewind(testing_file);
     testing_data = (char *)malloc(testing_file_size + 1);
+    testing_data[testing_file_size] = '\0';
     fread(testing_data, 1, testing_file_size, testing_file);
     fclose(testing_file);
   } else {
@@ -101,6 +105,10 @@ int main(int argc, char *argv[]) {
   }
   printf("%s", output_data);
 
+#if defined(__SANITIZE_ADDRESS__)
+  free(input_data);
+  free(testing_data);
+#endif
   return 0;
 }
 
@@ -112,6 +120,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
   char temp_buf[2048];
   int temp_len = 0;
 
+  u8 memory[MEMORY_SIZE] = {};
   u16 registers[14] = {};
   bool flags[sizeof(FlagsCharMap)];
 
@@ -127,8 +136,8 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     Sim86_Decode8086Instruction(input_file_size - offset, input_data + offset,
                                 &decoded);
 
-    int index = decoded.Operands[0].Register.Index - 1;
-    int register_prev_val = registers[index];
+    int changed_register_index = -1;
+    int register_prev_val = 0;
     bool flags_prev_val[sizeof(FlagsCharMap)];
     int ip_prev_val = offset;
     // can change later with jump instruction
@@ -153,7 +162,6 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
           val = ((u8 *)registers)[2 * operand_reg_index +
                                   decoded.Operands[i].Register.Offset];
         }
-
         args[i] = val;
         break;
       }
@@ -175,6 +183,23 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
         const char *term_reg_2 =
             Sim86_RegisterNameFromOperand(&effec_addr.Terms[1].Register);
         int displacement = effec_addr.Displacement;
+
+        int reg1_val = 0;
+        int reg2_val = 0;
+        if (effec_addr.Terms[0].Register.Index != 0) {
+          reg1_val = registers[effec_addr.Terms[0].Register.Index - 1];
+        }
+        if (effec_addr.Terms[1].Register.Index != 0) {
+          reg2_val = registers[effec_addr.Terms[1].Register.Index - 1];
+        }
+        args[i] = reg1_val + reg2_val + displacement;
+        if (i == 1) {
+          if (decoded.Flags == Inst_Wide) {
+            args[i] = ((u16 *)memory)[args[i] / 2];
+          } else {
+            args[i] = memory[args[i]];
+          }
+        }
 
         args_text[i] = temp_buf + temp_len;
         temp_len += sprintf(temp_buf + temp_len, "[%s", term_reg_1);
@@ -256,11 +281,28 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     case Op_mov:
     case Op_add:
     case Op_sub: {
-      if (decoded.Operands[0].Register.Count == 2) {
-        registers[index] = res;
-      } else {
-        ((u8 *)registers)[2 * index + decoded.Operands[0].Register.Offset] =
-            res;
+      switch (decoded.Operands[0].Type) {
+      case Operand_Register: {
+        changed_register_index = decoded.Operands[0].Register.Index - 1;
+        register_prev_val = registers[changed_register_index];
+        if (decoded.Flags == Inst_Wide) {
+          registers[changed_register_index] = res;
+        } else {
+          ((u8 *)registers)[2 * changed_register_index +
+                            decoded.Operands[0].Register.Offset] = res;
+        }
+        break;
+      }
+      case Operand_Memory: {
+        if (decoded.Flags == Inst_Wide) {
+          ((u16 *)memory)[args[0] / 2] = res;
+        } else {
+          memory[args[0]] = res;
+        }
+        break;
+      }
+      default: {
+      }
       }
       break;
     }
@@ -297,10 +339,10 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       break;
     }
     case Op_loopnz: {
+      changed_register_index = CX_REG_INDEX;
+      register_prev_val = registers[changed_register_index];
       register_prev_val = registers[CX_REG_INDEX];
       registers[CX_REG_INDEX] -= 1;
-      index = CX_REG_INDEX;
-      // register_new_val = registers[CX_REG_INDEX];
       if (registers[CX_REG_INDEX] != 0 and !flags[(Flags)Z]) {
         int jump_offset = decoded.Operands[0].Immediate.Value;
         ip_new_val += jump_offset;
@@ -355,11 +397,16 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     }
     }
 
-    int register_new_val = registers[index];
     char *register_change_text = (char *)"";
-    if (execute == true and register_prev_val != register_new_val) {
+    bool try_compare_reg = execute and changed_register_index >= 0;
+    int register_new_val = 0;
+    if (execute and changed_register_index >= 0) {
+      register_new_val = registers[changed_register_index];
+    }
+    // both should be zero if no reg
+    if (register_prev_val != register_new_val) {
       register_access reg_word =
-          register_access{.Index = (u32)index + 1, .Count = 2};
+          register_access{.Index = (u32)changed_register_index + 1, .Count = 2};
       const char *reg_word_name = Sim86_RegisterNameFromOperand(&reg_word);
       register_change_text = temp_buf + temp_len;
       temp_len += sprintf(temp_buf + temp_len, " %s:0x%x->0x%x", reg_word_name,
@@ -419,7 +466,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     if (offset != 0) {
       len += sprintf(buf + len, "      ip: 0x%04x (%d)\r\n", offset, offset);
     }
-    bool zero_flags[2];
+    bool zero_flags[sizeof(FlagsCharMap)];
     if (memcmp(flags, zero_flags, sizeof(flags)) != 0) {
       len += sprintf(buf + len, "   flags: ");
       for (int i = 0; i < sizeof(flags); i++) {
@@ -428,8 +475,9 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
           len += 1;
         }
       }
+      len += sprintf(buf + len, "\r\n");
     }
-    len += sprintf(buf + len, "\r\n\r\n");
+    len += sprintf(buf + len, "\r\n");
   }
   return Decode_Execute_File_Result{.len = len, .exit_code = exit_code};
 }
@@ -469,6 +517,7 @@ int compare_executed_asm(char *output_data, int output_data_size,
   if (testing_file_size != output_data_size or testing_file_size != diff_i) {
     exit_code = 1;
 
+    int bla = strlen(testing_data);
     printf("expected:\n%s\nreceived:\n%s\n", testing_data, output_data);
 
     printf("\nfirst difference in line %d:\n", line_count);

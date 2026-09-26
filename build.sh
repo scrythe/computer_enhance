@@ -25,7 +25,13 @@ fi
 
 mkdir -p build
 
-common_build_flags="-g -Wall -Werror -o build/sim86 src/sim86.cpp build/sim86_shared_debug.a"
+asan_flags=""
+if [[ "${asan:-0}" == 1 ]]; then
+  echo "[enable asan]"
+  asan_flags="-fsanitize=address -fno-omit-frame-pointer"
+fi
+
+common_build_flags="-g $asan_flags -Wall -Werror -o build/sim86 src/sim86.cpp build/sim86_shared_debug.a"
 if [[ "${release:-0}" == 1 ]]; then
   echo "[release mode]"
   compile="clang -O2 $common_build_flags"
@@ -36,7 +42,7 @@ fi
 
 if [[ ! -f "sim86_shared_debug.a" ]]; then
   echo "[building sim86_shared_debug.a]"
-  clang++ -g -c -o build/sim86_shared_debug.o computer_enhance/perfaware/sim86/sim86_lib.cpp
+  clang++ -g $asan_flags -c -o build/sim86_shared_debug.o computer_enhance/perfaware/sim86/sim86_lib.cpp
   llvm-ar rs build/sim86_shared_debug.a build/sim86_shared_debug.o
 fi
 
