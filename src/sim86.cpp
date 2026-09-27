@@ -14,7 +14,7 @@
 
 #define SIM86_VERSION 4
 
-#define FILE_NAME "listing_0056_estimating_cycles"
+#define FILE_NAME "listing_0057_challenge_cycles"
 #define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
@@ -57,6 +57,7 @@ const int MovCyclesList[5] = {2, 8, 9, 4, 10};
 const int AddCyclesList[5] = {3, 9, 16, 4, 17};
 
 int main(int argc, char *argv[]) {
+
   u32 version = Sim86_GetVersion();
   if (version != SIM86_VERSION) {
     printf("Incorrect version, expected %d, got %d\n", SIM86_VERSION, version);
@@ -148,6 +149,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
                                                bool execute, bool output_image,
                                                bool show_clock_cycles,
                                                bool is_8088) {
+
   int exit_code = 0;
   int len = 0;
   char temp_buf[2048];
@@ -184,7 +186,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     const char *args_text[2];
     int args[2];
     int effect_addr_clock = 0;
-    int effect_addr_val[2];
+    int effect_addr_val[2] = {};
     for (int i = 0; i < 2; i++) {
       switch (decoded.Operands[i].Type) {
       case Operand_Register: {
@@ -231,7 +233,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
         }
         effect_addr_val[i] = reg1_val + reg2_val + displacement;
         if (decoded.Flags == Inst_Wide) {
-          args[i] = ((u16 *)memory)[effect_addr_val[i] / 2];
+          args[i] = *(u16 *)&memory[effect_addr_val[i]];
         } else {
           args[i] = memory[effect_addr_val[i]];
         }
@@ -256,10 +258,10 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
           bool is_bp_and_di =
               (effec_addr.Terms[0].Register.Index == (EffecAddrReg)BP) and
               (effec_addr.Terms[1].Register.Index == (EffecAddrReg)DI);
-          // bool is_bx_and_si =
-          //     (effec_addr.Terms[0].Register.Index == (EffecAddrReg)BX) and
-          //     (effec_addr.Terms[1].Register.Index == (EffecAddrReg)SI);
-          if (is_bp_and_di) {
+          bool is_bx_and_si =
+              (effec_addr.Terms[0].Register.Index == (EffecAddrReg)BX) and
+              (effec_addr.Terms[1].Register.Index == (EffecAddrReg)SI);
+          if (is_bp_and_di or is_bx_and_si) {
             effect_addr_clock = (EffectAddrClock)DispAndBaseAndIndex1;
           } else {
             effect_addr_clock = (EffectAddrClock)DispAndBaseAndIndex2;
@@ -269,7 +271,10 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
           bool is_bp_and_di =
               (effec_addr.Terms[0].Register.Index == (EffecAddrReg)BP) and
               (effec_addr.Terms[1].Register.Index == (EffecAddrReg)DI);
-          if (is_bp_and_di) {
+          bool is_bx_and_si =
+              (effec_addr.Terms[0].Register.Index == (EffecAddrReg)BX) and
+              (effec_addr.Terms[1].Register.Index == (EffecAddrReg)SI);
+          if (is_bp_and_di or is_bx_and_si) {
             effect_addr_clock = (EffectAddrClock)BaseAndIndex1;
           } else {
             effect_addr_clock = (EffectAddrClock)BaseAndIndex2;
@@ -383,7 +388,7 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
       }
       case Operand_Memory: {
         if (decoded.Flags == Inst_Wide) {
-          ((u16 *)memory)[effect_addr_val[0] / 2] = res;
+          *(u16 *)&memory[effect_addr_val[0]] = res;
         } else {
           memory[effect_addr_val[0]] = res;
         }
@@ -453,6 +458,8 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
     default: {
     }
     }
+
+    printf("res: %d\n", res);
 
     if (!execute) {
       ip_new_val = offset + decoded.Size;
@@ -567,8 +574,19 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
 
     char *penalty_cycles_text = (char *)"";
     int penalty_cycles = 0;
+
     if (is_8088) {
       penalty_cycles = 4 * transfers;
+    } else {
+      for (int i = 0; i < sizeof(effect_addr_val) / sizeof(effect_addr_val[0]);
+           i++) {
+        if (effect_addr_val[i] % 2 == 1) {
+          penalty_cycles += 4 * transfers;
+        }
+      }
+    }
+
+    if (penalty_cycles != 0) {
       penalty_cycles_text = temp_buf + temp_len;
       temp_len += sprintf(temp_buf + temp_len, " + %dp", penalty_cycles);
       temp_buf[temp_len] = '\0';
@@ -632,6 +650,9 @@ Decode_Execute_File_Result decode_execute_file(char *buf, u8 *input_data,
         }
       }
       len += sprintf(buf + len, "\r\n");
+      if (show_clock_cycles and !is_8088) {
+        len += sprintf(buf + len, "\r\n");
+      }
     }
     if (!is_8088) {
       len += sprintf(buf + len, "\r\n");
@@ -714,8 +735,8 @@ int compare_executed_asm(bool show_clock_cycles, bool is_8088,
       (testing_end - testing_start) != diff_i) {
     exit_code = 1;
 
-    int bla = strlen(testing_data);
-    printf("expected:\n%s\nreceived:\n%s\n", testing_data, output_data);
+    printf("expected:\n%.*s\nreceived:\n%s\n", testing_end - testing_start,
+           testing_data, output_data);
 
     printf("\nfirst difference in line %d:\n", line_count);
 
