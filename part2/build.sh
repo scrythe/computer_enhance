@@ -31,7 +31,7 @@ if [[ "${asan:-0}" == 1 ]]; then
   asan_flags="-fsanitize=address -fno-omit-frame-pointer"
 fi
 
-common_build_flags="-g $asan_flags -Wall -Werror -o build/sim86 src/sim86.cpp build/sim86_shared_debug.a"
+common_build_flags="-g -std=c99 $asan_flags  -Wall -Werror -o build/sine_generator src/sine_generator.c"
 if [[ "${release:-0}" == 1 ]]; then
   echo "[release mode]"
   compile="clang -O2 $common_build_flags"
@@ -40,16 +40,10 @@ else
   compile="clang -O0 $common_build_flags -Wno-unused-variable -Wno-unused-but-set-variable -DBUILD_DEBUG=1"
 fi
 
-if [[ ! -f "sim86_shared_debug.a" ]]; then
-  echo "[building sim86_shared_debug.a]"
-  clang++ -g $asan_flags -c -o build/sim86_shared_debug.o ../../computer_enhance/perfaware/sim86/sim86_lib.cpp
-  llvm-ar rs build/sim86_shared_debug.a build/sim86_shared_debug.o
-fi
-
-echo "[building sim86]"
+echo "[building sine_generator]"
 $compile
 
 if [[ "${run:-0}" == "1" ]]; then
-  echo "[running sim86]"
-  ./build/sim86 $command_args
+  echo "[running sine_generator]"
+  ./build/sine_generator $command_args
 fi
