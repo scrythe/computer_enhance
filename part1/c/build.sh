@@ -42,7 +42,7 @@ fi
 
 if [[ ! -f "sim86_shared_debug.a" ]]; then
   echo "[building sim86_shared_debug.a]"
-  clang++ -g $asan_flags -c -o build/sim86_shared_debug.o computer_enhance/perfaware/sim86/sim86_lib.cpp
+  clang++ -g $asan_flags -c -o build/sim86_shared_debug.o ../../computer_enhance/perfaware/sim86/sim86_lib.cpp
   llvm-ar rs build/sim86_shared_debug.a build/sim86_shared_debug.o
 fi
 

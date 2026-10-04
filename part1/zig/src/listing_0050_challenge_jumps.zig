@@ -5,6 +5,8 @@ const Allocator = std.mem.Allocator;
 const sim86 = @import("sim86");
 const Instruction = sim86.Instruction;
 
+const CX_REG_INDEX = 3;
+
 const Flags = enum(u8) { C, P, A, S, Z, O };
 const FlagsMap = blk: {
     const flags_fields = @typeInfo(Flags).@"enum".fields;
@@ -19,11 +21,11 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0048_ip_register" };
+    const listing_paths = [_][]const u8{ "..", "..", "computer_enhance", "perfaware", "part1", "listing_0050_challenge_jumps" };
     const listing_path = try std.fs.path.join(arena_alloc, &listing_paths);
     const listing_content: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_path, arena_alloc, .unlimited);
 
-    const listing_expected_output_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", "listing_0048_ip_register.txt" };
+    const listing_expected_output_paths = [_][]const u8{ "..", "..", "computer_enhance", "perfaware", "part1", "listing_0050_challenge_jumps.txt" };
     const listing_expected_output_path = try std.fs.path.join(arena_alloc, &listing_expected_output_paths);
     const listing_expected_output: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_expected_output_path, arena_alloc, .unlimited);
 
@@ -74,19 +76,33 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u16, ip_reg: *u16, flags: *[FlagsMap.len]bool, listing_content: []u8) !void {
-    try listing_output_writer.print("--- test\\listing_0048_ip_register execution ---\r\n", .{});
+    try listing_output_writer.print("--- test\\listing_0050_challenge_jumps execution ---\r\n", .{});
 
     var temp_print_buffer: [1024]u8 = undefined;
     var temp_print_writer = std.Io.Writer.fixed(&temp_print_buffer);
 
     while (ip_reg.* < listing_content.len) {
         const decoded = try sim86.decode8086Instruction(listing_content[ip_reg.*..]);
-        var dest_reg = decoded.Operands[0].data.Register;
-        var dest_reg_word = sim86.RegisterAccess{ .Index = dest_reg.Index, .Offset = 0, .Count = 2 };
-        const dest_reg_name = sim86.registerNameFromOperand(&dest_reg);
-        const dest_reg_word_name = sim86.registerNameFromOperand(&dest_reg_word);
+        var dest_reg: sim86.RegisterAccess = undefined;
+        var dest_reg_word: sim86.RegisterAccess = undefined;
+        var dest_reg_name: []const u8 = "";
+        var dest_reg_word_name: []const u8 = "";
 
-        const prev_dest_reg_word_data = registers[dest_reg.Index - 1];
+        var prev_dest_reg_word_data: u16 = 0;
+
+        if (decoded.Operands[0].Type == .OperandRegister) {
+            dest_reg = decoded.Operands[0].data.Register;
+            dest_reg_word = sim86.RegisterAccess{ .Index = dest_reg.Index, .Offset = 0, .Count = 2 };
+            dest_reg_name = sim86.registerNameFromOperand(&dest_reg);
+            dest_reg_word_name = sim86.registerNameFromOperand(&dest_reg_word);
+
+            prev_dest_reg_word_data = registers[dest_reg.Index - 1];
+        } else if (decoded.Op == .Op_loopnz) {
+            dest_reg_word = sim86.RegisterAccess{ .Index = CX_REG_INDEX, .Offset = 0, .Count = 2 };
+            dest_reg_word_name = sim86.registerNameFromOperand(&dest_reg_word);
+
+            prev_dest_reg_word_data = registers[CX_REG_INDEX - 1];
+        }
 
         const prev_flags_name = blk: {
             const start = temp_print_writer.end;
@@ -99,6 +115,8 @@ fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u
         };
 
         const prev_ip_reg_data = ip_reg.*;
+        // replaced later if jump Instruction
+        var new_ip_reg_data: u16 = ip_reg.* + @as(u16, @intCast(decoded.Size));
 
         // two bytes
         var dest_reg_data = prev_dest_reg_word_data;
@@ -136,6 +154,33 @@ fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u
             second_operand_name = temp_print_buffer[start..temp_print_writer.end];
         }
 
+        var instruction_argument_text: []const u8 = "";
+        switch (decoded.Op) {
+            .Op_mov,
+            .Op_sub,
+            .Op_cmp,
+            .Op_add,
+            => {
+                const start = temp_print_writer.end;
+                try temp_print_writer.print("{s}, {s}", .{
+                    dest_reg_name,
+                    second_operand_name,
+                });
+                instruction_argument_text = temp_print_buffer[start..temp_print_writer.end];
+            },
+            .Op_jne, .Op_je, .Op_jb, .Op_loopnz, .Op_jp => {
+                const start = temp_print_writer.end;
+                const offset = decoded.Operands[0].data.Immediate.Value + @as(i32, @intCast(decoded.Size));
+                const offset_sign: u8 = if (offset < 0) '-' else '+';
+                try temp_print_writer.print("${c}{d}", .{ offset_sign, @abs(offset) });
+                instruction_argument_text = temp_print_buffer[start..temp_print_writer.end];
+            },
+            else => {
+                std.debug.print("not implemented: {any}\n", .{decoded.Op});
+                unreachable;
+            },
+        }
+
         var res: u16 = 0;
         switch (decoded.Op) {
             .Op_mov => {
@@ -157,7 +202,6 @@ fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u
 
                 const dest_reg_data_u4: u4 = @truncate(dest_reg_data);
                 const second_operand_data_u4: u4 = @truncate(second_operand_data);
-                // std.debug.print("{d} {d}\n", .{ dest_reg_data_u4, second_operand_data_u4 });
                 const four_bitadd_res = @subWithOverflow(dest_reg_data_u4, second_operand_data_u4);
                 flags[@intFromEnum(Flags.A)] = four_bitadd_res[1] == 1;
             },
@@ -179,12 +223,50 @@ fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u
                 const four_bitadd_res = @addWithOverflow(dest_reg_data_u4, second_operand_data_u4);
                 flags[@intFromEnum(Flags.A)] = four_bitadd_res[1] == 1;
             },
+            .Op_jne => {
+                if (!flags[@intFromEnum(Flags.Z)]) {
+                    const offset_i16: i16 = @truncate(decoded.Operands[0].data.Immediate.Value);
+                    const new_ip_reg_data_i16: i16 = @intCast(new_ip_reg_data);
+                    new_ip_reg_data = @bitCast(new_ip_reg_data_i16 + offset_i16);
+                }
+            },
+            .Op_je => {
+                if (flags[@intFromEnum(Flags.Z)]) {
+                    const offset_i16: i16 = @truncate(decoded.Operands[0].data.Immediate.Value);
+                    const new_ip_reg_data_i16: i16 = @intCast(new_ip_reg_data);
+                    new_ip_reg_data = @bitCast(new_ip_reg_data_i16 + offset_i16);
+                }
+            },
+            .Op_jb => {
+                if (flags[@intFromEnum(Flags.C)]) {
+                    const offset_i16: i16 = @truncate(decoded.Operands[0].data.Immediate.Value);
+                    const new_ip_reg_data_i16: i16 = @intCast(new_ip_reg_data);
+                    new_ip_reg_data = @bitCast(new_ip_reg_data_i16 + offset_i16);
+                }
+            },
+            .Op_loopnz => {
+                registers[CX_REG_INDEX - 1] = @bitCast(@as(i16, @bitCast(registers[CX_REG_INDEX - 1])) - 1);
+                if (registers[CX_REG_INDEX - 1] != 0 and !flags[@intFromEnum(Flags.Z)]) {
+                    const offset_i16: i16 = @truncate(decoded.Operands[0].data.Immediate.Value);
+                    const new_ip_reg_data_i16: i16 = @intCast(new_ip_reg_data);
+                    new_ip_reg_data = @bitCast(new_ip_reg_data_i16 + offset_i16);
+                }
+            },
+            .Op_jp => {
+                if (flags[@intFromEnum(Flags.P)]) {
+                    const offset_i16: i16 = @truncate(decoded.Operands[0].data.Immediate.Value);
+                    const new_ip_reg_data_i16: i16 = @intCast(new_ip_reg_data);
+                    new_ip_reg_data = @bitCast(new_ip_reg_data_i16 + offset_i16);
+                }
+            },
             else => {
-                res = res;
+                const mnemonic = sim86.mnemonicFromOperationType(decoded.Op);
+                std.debug.print("not implemented: {s}\n", .{mnemonic});
+                unreachable;
             },
         }
 
-        if (decoded.Op != .Op_cmp) {
+        if (decoded.Operands[0].Type == .OperandRegister and decoded.Op != .Op_cmp) {
             // two bytes
             if (dest_reg.Count == 2) {
                 registers[dest_reg.Index - 1] = res;
@@ -197,7 +279,13 @@ fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u
             }
         }
 
-        const dest_reg_new_word_data = registers[dest_reg.Index - 1];
+        var dest_reg_new_word_data: u16 = 0;
+        if (decoded.Operands[0].Type == .OperandRegister) {
+            dest_reg_new_word_data = registers[dest_reg.Index - 1];
+        } else if (decoded.Op == .Op_loopnz) {
+            dest_reg_new_word_data = registers[CX_REG_INDEX - 1];
+        }
+
         var dest_reg_change_text: []const u8 = "";
         if (prev_dest_reg_word_data != dest_reg_new_word_data) {
             const start = temp_print_writer.end;
@@ -222,15 +310,12 @@ fn execute_instructions(listing_output_writer: *std.Io.Writer, registers: *[14]u
             flags_change_text = temp_print_buffer[start..temp_print_writer.end];
         }
 
-        ip_reg.* += @intCast(decoded.Size);
-
-        const new_ip_reg_data = ip_reg.*;
+        ip_reg.* = new_ip_reg_data;
 
         const mnemonic = sim86.mnemonicFromOperationType(decoded.Op);
-        try listing_output_writer.print("{s} {s}, {s} ;{s} ip:0x{x}->0x{x}{s} \r\n", .{
+        try listing_output_writer.print("{s} {s} ;{s} ip:0x{x}->0x{x}{s} \r\n", .{
             mnemonic,
-            dest_reg_name,
-            second_operand_name,
+            instruction_argument_text,
             dest_reg_change_text,
             prev_ip_reg_data,
             new_ip_reg_data,

@@ -19,17 +19,17 @@ const FlagsMap = blk: {
     break :blk flags_map;
 };
 
-const file_name = "listing_0051_memory_mov";
+const file_name = "listing_0053_add_loop_challenge";
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena;
     const arena_alloc = arena.allocator();
-    const listing_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", file_name };
+    const listing_paths = [_][]const u8{ "..", "..", "computer_enhance", "perfaware", "part1", file_name };
     const listing_path = try std.fs.path.join(arena_alloc, &listing_paths);
     const listing_content: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_path, arena_alloc, .unlimited);
 
-    const listing_expected_output_paths = [_][]const u8{ "..", "computer_enhance", "perfaware", "part1", file_name ++ ".txt" };
+    const listing_expected_output_paths = [_][]const u8{ "..", "..", "computer_enhance", "perfaware", "part1", file_name ++ ".txt" };
     const listing_expected_output_path = try std.fs.path.join(arena_alloc, &listing_expected_output_paths);
     const listing_expected_output: []u8 = try Io.Dir.cwd().readFileAlloc(io, listing_expected_output_path, arena_alloc, .unlimited);
 
@@ -351,11 +351,13 @@ fn execute_instructions(
         if (prev_reg != 0) {
             var reg_word = sim86.RegisterAccess{ .Index = prev_reg, .Offset = 0, .Count = 2 };
             const new_reg_val = registers[prev_reg - 1];
-            const reg_name = sim86.registerNameFromOperand(&reg_word);
 
-            const start = temp_print_writer.end;
-            try temp_print_writer.print(" {s}:0x{x}->0x{x}", .{ reg_name, prev_reg_val, new_reg_val });
-            registers_change_text = temp_print_buffer[start..temp_print_writer.end];
+            if (prev_reg_val != new_reg_val) {
+                const reg_name = sim86.registerNameFromOperand(&reg_word);
+                const start = temp_print_writer.end;
+                try temp_print_writer.print(" {s}:0x{x}->0x{x}", .{ reg_name, prev_reg_val, new_reg_val });
+                registers_change_text = temp_print_buffer[start..temp_print_writer.end];
+            }
         }
 
         const new_flags_name = blk: {

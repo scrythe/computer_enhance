@@ -9,18 +9,18 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "../computer_enhance/perfaware/sim86/shared/sim86_shared.h"
+#include "../../../computer_enhance/perfaware/sim86/shared/sim86_shared.h"
 #include "sim86.h"
 
 #define SIM86_VERSION 4
 
 #define FILE_NAME "listing_0057_challenge_cycles"
-#define FILE_INPUT_PATH "computer_enhance/perfaware/part1/" FILE_NAME
+#define FILE_INPUT_PATH "../../computer_enhance/perfaware/part1/" FILE_NAME
 #define FILE_DISASSEMBLY_OUTPUT_PATH                                           \
   "testing_results/" FILE_NAME "_disassembly.asm"
 #define FILE_IMAGE_OUTPUT_PATH "results/" FILE_NAME "_image.data"
 #define FILE_TEST_EXECUTION_PATH                                               \
-  "computer_enhance/perfaware/part1/" FILE_NAME ".txt"
+  "../../computer_enhance/perfaware/part1/" FILE_NAME ".txt"
 
 #define UINT4_MAX 15
 
@@ -97,7 +97,7 @@ int main(int argc, char *argv[]) {
   if (execute) {
     FILE *testing_file = fopen(FILE_TEST_EXECUTION_PATH, "r");
     if (testing_file == NULL) {
-      printf("unable to open file: %s\n", FILE_INPUT_PATH);
+      printf("unable to open file: %s\n", FILE_TEST_EXECUTION_PATH);
       return 1;
     }
     fseek(testing_file, 0, SEEK_END);
