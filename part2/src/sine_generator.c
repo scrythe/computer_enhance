@@ -1,16 +1,4 @@
 #include "sine_generator.h"
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-#ifdef BUILD_DEBUG
-#define assert(val)                                                            \
-  if (!(val)) {                                                                \
-    __builtin_trap();                                                          \
-  }
-#else
-#define assert(val) (void)(val)
-#endif
 
 const u64 SIGN_MASK = ((u64)1 << 63);
 
@@ -52,7 +40,7 @@ f64 rand_f64_in_range(u64 *state, f64 min, f64 max) {
 #define MAX_FLOAT_STRING_SIZE 100
 #define PARSE_FILE_PATH "sine_data.json"
 
-HaversineDataSlice gen_formula(u32 seed, u32 size) {
+HaversineDataSlice gen_formula(bool is_cluster, u64 seed, u64 size) {
   u64 rand_state = seed;
   HaversineDataSlice haversine_data_slice = {
       .ptr = malloc(size * sizeof(HaversineData)),
@@ -68,25 +56,33 @@ HaversineDataSlice gen_formula(u32 seed, u32 size) {
   f64 x_max_array[16];
   f64 y_min_array[16];
   f64 y_max_array[16];
-  for (int i = 0; i < 16; i++) {
-    // between -180 and 180
-    f64 x_center = -3 * 180 + rand_f64(&rand_state) * 2 * 180;
-    f64 y_center = -3 * 90 + rand_f64(&rand_state) * 2 * 90;
+  if (is_cluster) {
+    for (int i = 0; i < 16; i++) {
+      // between -180 and 180
+      f64 x_center = -3 * 180 + rand_f64(&rand_state) * 2 * 180;
+      f64 y_center = -3 * 90 + rand_f64(&rand_state) * 2 * 90;
 
-    f64 x_max_center = 180 - fabs(x_center);
-    f64 y_max_center = 90 - fabs(y_center);
-    // between 0 and max_center
-    f64 x_radius = -x_max_center + rand_f64(&rand_state) * x_max_center;
-    f64 y_radius = -y_max_center + rand_f64(&rand_state) * y_max_center;
+      f64 x_max_center = 180 - fabs(x_center);
+      f64 y_max_center = 90 - fabs(y_center);
+      // between 0 and max_center
+      f64 x_radius = -x_max_center + rand_f64(&rand_state) * x_max_center;
+      f64 y_radius = -y_max_center + rand_f64(&rand_state) * y_max_center;
 
-    x_min_array[i] = x_center - x_radius;
-    y_min_array[i] = y_center - y_radius;
+      x_min_array[i] = x_center - x_radius;
+      y_min_array[i] = y_center - y_radius;
 
-    x_max_array[i] = x_center + x_radius;
-    y_max_array[i] = y_center + y_radius;
+      x_max_array[i] = x_center + x_radius;
+      y_max_array[i] = y_center + y_radius;
+    }
+  } else {
+    for (int i = 0; i < 16; i++) {
+      x_min_array[i] = -180;
+      y_min_array[i] = -90;
+
+      x_max_array[i] = 180;
+      y_max_array[i] = 90;
+    }
   }
-
-  u32 clusters = 16 / size;
 
   u32 i = 0;
   u32 cluster_i = 0;

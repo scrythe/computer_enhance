@@ -1,6 +1,19 @@
-#include "sine_generator.c"
+#include <math.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#ifdef BUILD_DEBUG
+#define assert(val)                                                            \
+  if (!(val)) {                                                                \
+    __builtin_trap();                                                          \
+  }
+#else
+#define assert(val) (void)(val)
+#endif
+
+#include "sine_generator.c"
 
 #define printf_error(message, ...)                                             \
   fprintf(stderr, "\033[91mError:\033[0m " message, ##__VA_ARGS__)
@@ -8,8 +21,8 @@
 f64 Haversine_ReferenceHaversine(f64 X0, f64 Y0, f64 X1, f64 Y1,
                                  f64 EarthRadius);
 
-u32 parse_u32(char *string) {
-  u32 value = 0;
+u64 parse_u64(char *string) {
+  u64 value = 0;
   char *current_char = string;
   while (*current_char >= '0' && *current_char <= '9') {
     u8 integer = *current_char - '0';
@@ -37,10 +50,10 @@ int main(int argc, char *argv[]) {
   }
 
   bool is_cluster = strcmp(argv[1], "cluster") == 0;
-  u32 seed = parse_u32(argv[2]);
-  u32 size = parse_u32(argv[3]);
+  u64 seed = parse_u64(argv[2]);
+  u64 size = parse_u64(argv[3]);
 
-  HaversineDataSlice haversine_data_slice = gen_formula(seed, size);
+  HaversineDataSlice haversine_data_slice = gen_formula(is_cluster, seed, size);
   f64 total = 0;
   for (int i = 0; i < haversine_data_slice.len; i++) {
     HaversineData haversine_data = haversine_data_slice.ptr[i];
@@ -49,5 +62,12 @@ int main(int argc, char *argv[]) {
                                            6372.8);
     total += val;
   }
-  printf("%f\n", total / haversine_data_slice.len);
+  if (is_cluster) {
+    printf("Method: cluster\n");
+  } else {
+    printf("Method: uniform\n");
+  }
+  printf("Random seed: %ld\n", seed);
+  printf("Pair count: %ld\n", size);
+  printf("Expected sum: %f\n", total / haversine_data_slice.len);
 }
