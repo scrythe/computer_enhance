@@ -1,4 +1,6 @@
 #include "sine_generator.c"
+#include <stdbool.h>
+#include <string.h>
 
 #define printf_error(message, ...)                                             \
   fprintf(stderr, "\033[91mError:\033[0m " message, ##__VA_ARGS__)
@@ -18,13 +20,25 @@ u32 parse_u32(char *string) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 3) {
-    printf_error("Require seed and size argument\n");
-    return 1;
+  int error = 0;
+  if (argc < 4) {
+    error = 1;
+  }
+  if (error == 0 && (strcmp(argv[1], "uniform") != 0) &&
+      (strcmp(argv[1], "cluster") != 0)) {
+    error = 1;
   }
 
-  u32 seed = parse_u32(argv[1]);
-  u32 size = parse_u32(argv[2]);
+  if (error != 0) {
+    printf_error("Require method, seed and size argument\n"
+                 "Usage: %s [uniform/cluster] [seed] [size]\n",
+                 argv[0]);
+    return error;
+  }
+
+  bool is_cluster = strcmp(argv[1], "cluster") == 0;
+  u32 seed = parse_u32(argv[2]);
+  u32 size = parse_u32(argv[3]);
 
   HaversineDataSlice haversine_data_slice = gen_formula(seed, size);
   f64 total = 0;
