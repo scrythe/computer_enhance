@@ -12,6 +12,9 @@ while [[ $# -gt 0 ]]; do
     shift
     command_args=$@
     break
+  elif [[ $1 == "-file="* ]]; then
+    file="${1#-file=}"
+    shift
   else
     declare $1='1'
     shift
@@ -37,7 +40,17 @@ if [[ ! -f "haversine_formula.a" ]]; then
   llvm-ar rs build/haversine_formula.a build/haversine_formula.o
 fi
 
-common_build_flags="-g -std=c99 $asan_flags  -Wall -Werror -o build/sine_generator src/haversine.c build/haversine_formula.a -lm"
+if [[ ! -e "src/$file.c" ]]; then
+  echo "file 'src/$file' does not exist"
+  exit 1
+fi
+
+if [[ $file != *"_main" ]]; then
+  echo "file 'src/$file' is not executable"
+  exit 1
+fi
+
+common_build_flags="-g -std=c99 $asan_flags  -Wall -Werror -o build/$file src/$file.c build/haversine_formula.a -lm"
 if [[ "${release:-0}" == 1 ]]; then
   echo "[release mode]"
   compile="clang -O2 $common_build_flags"
@@ -46,10 +59,10 @@ else
   compile="clang -O0 $common_build_flags -Wno-unused-variable -Wno-unused-but-set-variable -DBUILD_DEBUG=1"
 fi
 
-echo "[building sine_generator]"
+echo "[building $file]"
 $compile
 
 if [[ "${run:-0}" == "1" ]]; then
-  echo "[running sine_generator]"
-  ./build/sine_generator $command_args
+  echo "[running $file]"
+  ./build/$file $command_args
 fi

@@ -1,4 +1,11 @@
-#include "sine_generator.h"
+#include "base.c"
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "sine_generator_main.h"
 
 const u64 SIGN_MASK = ((u64)1 << 63);
 
@@ -37,8 +44,9 @@ f64 rand_f64_in_range(u64 *state, f64 min, f64 max) {
 }
 
 // could be smaller?
-#define MAX_FLOAT_STRING_SIZE 100
+#define MAX_FLOAT_STRING_SIZE 200
 #define PARSE_FILE_PATH "sine_data.json"
+#define RAW_INPUT_FILE_PATH "raw_sine_data"
 
 HaversineDataSlice gen_formula(bool is_cluster, u64 seed, u64 size) {
   u64 rand_state = seed;
@@ -92,25 +100,25 @@ HaversineDataSlice gen_formula(bool is_cluster, u64 seed, u64 size) {
                                        x_max_array[cluster_i]);
     haversine_data_slice.ptr[i].x0 = rand_float;
     parsed_data_i +=
-        sprintf(parsed_data + parsed_data_i, "    {\"x0\":%f", rand_float);
+        sprintf(parsed_data + parsed_data_i, "    {\"x0\":%.17f", rand_float);
 
     rand_float = rand_f64_in_range(&rand_state, y_min_array[cluster_i],
                                    y_max_array[cluster_i]);
     haversine_data_slice.ptr[i].y0 = rand_float;
     parsed_data_i +=
-        sprintf(parsed_data + parsed_data_i, ", \"y0\":%f", rand_float);
+        sprintf(parsed_data + parsed_data_i, ", \"y0\":%.17f", rand_float);
 
     rand_float = rand_f64_in_range(&rand_state, x_min_array[cluster_i],
                                    x_max_array[cluster_i]);
     haversine_data_slice.ptr[i].x1 = rand_float;
     parsed_data_i +=
-        sprintf(parsed_data + parsed_data_i, ", \"x1\":%f", rand_float);
+        sprintf(parsed_data + parsed_data_i, ", \"x1\":%.17f", rand_float);
 
     rand_float = rand_f64_in_range(&rand_state, y_min_array[cluster_i],
                                    y_max_array[cluster_i]);
     haversine_data_slice.ptr[i].y1 = rand_float;
     parsed_data_i +=
-        sprintf(parsed_data + parsed_data_i, ", \"y1\":%f},\n", rand_float);
+        sprintf(parsed_data + parsed_data_i, ", \"y1\":%.17f},\n", rand_float);
     i += 1;
     cluster_i = (cluster_i + 1) % 16;
   }
@@ -122,5 +130,49 @@ HaversineDataSlice gen_formula(bool is_cluster, u64 seed, u64 size) {
   FILE *parse_file = fopen(PARSE_FILE_PATH, "w");
   fwrite(parsed_data, 1, parsed_data_i, parse_file);
 
+  FILE *raw_input_file = fopen(RAW_INPUT_FILE_PATH, "w");
+  fwrite(haversine_data_slice.ptr, sizeof(*haversine_data_slice.ptr),
+         haversine_data_slice.len, raw_input_file);
+
   return haversine_data_slice;
+}
+
+int main(int argc, char *argv[]) {
+  int error = 0;
+  if (argc < 4) {
+    error = 1;
+  }
+  if (error == 0 && (strcmp(argv[1], "uniform") != 0) &&
+      (strcmp(argv[1], "cluster") != 0)) {
+    error = 1;
+  }
+
+  if (error != 0) {
+    printf_error("Require method, seed and size argument\n"
+                 "Usage: %s [uniform/cluster] [seed] [size]\n",
+                 argv[0]);
+    return error;
+  }
+
+  bool is_cluster = strcmp(argv[1], "cluster") == 0;
+  u64 seed = parse_u64(argv[2]);
+  u64 size = parse_u64(argv[3]);
+
+  HaversineDataSlice haversine_data_slice = gen_formula(is_cluster, seed, size);
+  f64 total = 0;
+  for (int i = 0; i < haversine_data_slice.len; i++) {
+    HaversineData haversine_data = haversine_data_slice.ptr[i];
+    f64 val = Haversine_ReferenceHaversine(haversine_data.x0, haversine_data.y0,
+                                           haversine_data.x1, haversine_data.y1,
+                                           6372.8);
+    total += val;
+  }
+  if (is_cluster) {
+    printf("Method: cluster\n");
+  } else {
+    printf("Method: uniform\n");
+  }
+  printf("Random seed: %ld\n", seed);
+  printf("Pair count: %ld\n", size);
+  printf("Expected sum: %f\n", total / haversine_data_slice.len);
 }
