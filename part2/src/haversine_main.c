@@ -29,7 +29,7 @@ f64 parse_f64(char *input_data, u32 *i) {
       *i += 1;
     }
   }
-  f64 pos_val = (f64)integer + (f64)fraction * powf(10, -decimal_point_pos);
+  f64 pos_val = (f64)integer + (f64)fraction * pow(10, -decimal_point_pos);
   return pos ? pos_val : pos_val * -1;
 }
 
@@ -63,23 +63,6 @@ int main(int argc, char *argv[]) {
   rewind(input_file);
   char *input_data = malloc(input_file_size);
   fread(input_data, 1, input_file_size, input_file);
-
-  char *raw_input_filename = "raw_sine_data";
-  FILE *raw_input_file = fopen(raw_input_filename, "r");
-  if (raw_input_file == NULL) {
-    printf_error("Unable to open file '%s'\n", raw_input_filename);
-    return 1;
-  }
-  HaversineDataSlice expected_haversine_data_slice;
-  fseek(raw_input_file, 0, SEEK_END);
-  expected_haversine_data_slice.len = ftell(raw_input_file);
-  rewind(raw_input_file);
-  expected_haversine_data_slice.ptr =
-      malloc(expected_haversine_data_slice.len *
-             sizeof(*expected_haversine_data_slice.ptr));
-  fread(expected_haversine_data_slice.ptr,
-        sizeof(*expected_haversine_data_slice.ptr),
-        expected_haversine_data_slice.len, raw_input_file);
 
   u32 max_haversine_amount = input_file_size / 100;
   HaversineDataVector haversine_data_vector = {
@@ -152,5 +135,34 @@ int main(int argc, char *argv[]) {
                                            6372.8);
     total += val;
   }
-  printf("total: %f\n", total / haversine_data_vector.len);
+
+  f64 sum = total / haversine_data_vector.len;
+  printf("Haversine sum: %0.20f\n", sum);
+
+  if (argc > 2) {
+    char *answers_filename = argv[2];
+    FILE *answers_file = fopen(answers_filename, "r");
+    if (answers_file == NULL) {
+      printf_error("Unable to open file '%s'\n", answers_filename);
+      return 1;
+    }
+    f64 answer;
+    fread(&answer, sizeof(answer), 1, answers_file);
+    printf("\nValidation:\n"
+           "Reference sum: %0.20f\n"
+           "Difference: %0.20f\n",
+           answer, answer - sum);
+  }
+  // TODO: maybe read read answers into array
+  //
+  // HaversineDataSlice expected_haversine_data_slice;
+  // fseek(raw_input_file, 0, SEEK_END);
+  // expected_haversine_data_slice.len = ftell(raw_input_file);
+  // rewind(raw_input_file);
+  // expected_haversine_data_slice.ptr =
+  //     malloc(expected_haversine_data_slice.len *
+  //            sizeof(*expected_haversine_data_slice.ptr));
+  // fread(expected_haversine_data_slice.ptr,
+  //       sizeof(*expected_haversine_data_slice.ptr),
+  //       expected_haversine_data_slice.len, raw_input_file);
 }

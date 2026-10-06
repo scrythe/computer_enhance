@@ -6,6 +6,11 @@ typedef struct {
 } HaversineData;
 
 typedef struct {
+  f64 *ptr;
+  u32 len;
+} F64Slice;
+
+typedef struct {
   HaversineData *ptr;
   u32 len;
 } HaversineDataSlice;
