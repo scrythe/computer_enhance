@@ -1,10 +1,13 @@
-#include "base.c"
+#define _POSIX_C_SOURCE 200809L
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
+#define IS_MAIN
+#include "base.c"
 #include "sine_generator_main.h"
 
 const u64 SIGN_MASK = ((u64)1 << 63);

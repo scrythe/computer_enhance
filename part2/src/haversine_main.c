@@ -1,10 +1,13 @@
-#include "base.c"
+#define _POSIX_C_SOURCE 200809L
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
+#define IS_MAIN
+#include "base.c"
 #include "sine_generator_main.h"
 
 f64 parse_f64(char *input_data, u32 *i) {
@@ -41,6 +44,8 @@ typedef enum {
 } Attribute;
 
 int main(int argc, char *argv[]) {
+  u64 cpu_freq = get_cpu_freq(1000);
+  u64 start = __rdtsc();
   int error = 0;
   char print_buf[1024];
   u32 print_buf_size = 0;
@@ -62,7 +67,9 @@ int main(int argc, char *argv[]) {
   u32 input_file_size = ftell(input_file);
   rewind(input_file);
   char *input_data = malloc(input_file_size);
+  u64 start_read = __rdtsc();
   fread(input_data, 1, input_file_size, input_file);
+  u64 elapsed_read = __rdtsc() - start_read;
 
   u32 max_haversine_amount = input_file_size / 100;
   HaversineDataVector haversine_data_vector = {
@@ -89,6 +96,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  u64 start_json_parser = __rdtsc();
   u32 i = expected_input_start_size;
   while (i < input_file_size) {
     if (input_data[i] == ' ') {
@@ -126,7 +134,9 @@ int main(int argc, char *argv[]) {
     }
     i += 1;
   }
+  u64 elapsed_json_parser = __rdtsc() - start_json_parser;
 
+  u64 start_sum = __rdtsc();
   f64 total = 0;
   for (u32 i = 0; i < haversine_data_vector.len; i++) {
     HaversineData haversine_data = haversine_data_vector.ptr[i];
@@ -135,6 +145,7 @@ int main(int argc, char *argv[]) {
                                            6372.8);
     total += val;
   }
+  u64 elapsed_sum = __rdtsc() - start_sum;
 
   f64 sum = total / haversine_data_vector.len;
   printf("Haversine sum: %0.20f\n", sum);
@@ -153,6 +164,16 @@ int main(int argc, char *argv[]) {
            "Difference: %0.20f\n",
            answer, answer - sum);
   }
+  u64 total_elapsed = __rdtsc() - start;
+
+  printf("Total time %.4fms\n",
+         (f64)total_elapsed / (f64)cpu_freq * MS_PER_SEC);
+  printf("Read:   %lu (%.4f%%)\n", elapsed_read,
+         (f64)elapsed_read / total_elapsed * 100);
+  printf("Parse: %lu (%.4f%%)\n", elapsed_json_parser,
+         (f64)elapsed_json_parser / total_elapsed * 100);
+  printf("Sum:   %lu (%.4f%%)\n", elapsed_sum,
+         (f64)elapsed_sum / total_elapsed * 100);
   // TODO: maybe read read answers into array
   //
   // HaversineDataSlice expected_haversine_data_slice;
