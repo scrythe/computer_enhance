@@ -10,7 +10,47 @@
 #include "base.c"
 #include "sine_generator_main.h"
 
-f64 parse_f64(char *input_data, u32 *i) {
+#define MAX_PROFILE_POINTS 50
+
+typedef struct {
+  u64 profile_time;
+  const char *profile_name;
+} Profile_Function_Data;
+
+Profile_Function_Data profile_points_list[MAX_PROFILE_POINTS];
+u8 profile_points_len = 0;
+
+void calc_time_diff(Profile_Function_Data *profile_function_data) {
+  u64 profile_elapsed = __rdtsc() - profile_function_data->profile_time;
+  profile_function_data->profile_time = profile_elapsed;
+  profile_points_list[profile_points_len++] = *profile_function_data;
+}
+
+void program_end(u64 *program_start) {
+  u64 program_elapsed = __rdtsc() - *program_start;
+  u64 cpu_freq = get_cpu_freq(1000);
+
+  printf("Total time %.4fms\n",
+         (f64)program_elapsed / (f64)cpu_freq * MS_PER_SEC);
+  for (u8 i = 0; i < profile_points_len; i++) {
+    Profile_Function_Data profile_point = profile_points_list[i];
+    printf("  %s: %lu (%.4f%%)\n", profile_point.profile_name,
+           profile_point.profile_time,
+           (f64)profile_point.profile_time / program_elapsed * 100);
+  }
+}
+
+#define profile_function                                                       \
+  __attribute__((cleanup(                                                      \
+      calc_time_diff))) Profile_Function_Data profile_data##__LINE__ = {       \
+      .profile_time = __rdtsc(),                                               \
+      .profile_name = __func__,                                                \
+  }
+
+#define profile_program                                                        \
+  __attribute__((cleanup(program_end))) u64 program_start##__LINE__ = __rdtsc()
+
+f64 parse_f64(u8 *input_data, u32 *i) {
   *i += 5; // for e.g. "x0":
   bool pos = true;
   i64 integer = 0;
@@ -36,51 +76,26 @@ f64 parse_f64(char *input_data, u32 *i) {
   return pos ? pos_val : pos_val * -1;
 }
 
-typedef enum {
-  a_x0,
-  a_y0,
-  a_x1,
-  a_y1,
-} Attribute;
-
-int main(int argc, char *argv[]) {
-  u64 cpu_freq = get_cpu_freq(1000);
-  u64 start = __rdtsc();
-  int error = 0;
-  char print_buf[1024];
-  u32 print_buf_size = 0;
-  if (argc < 2) {
-    printf_error("Require json filename and optional answer filename argument\n"
-                 "Usage: %s [haversine_input.json]\n"
-                 "       %s [haversine_input.json] [answer.f64]\n",
-                 argv[0], argv[0]);
-    return 1;
+f64 haversine_sum(HaversineDataVector haversine_data_vector) {
+  profile_function;
+  f64 total = 0;
+  for (u32 i = 0; i < haversine_data_vector.len; i++) {
+    HaversineData haversine_data = haversine_data_vector.ptr[i];
+    f64 val = Haversine_ReferenceHaversine(haversine_data.x0, haversine_data.y0,
+                                           haversine_data.x1, haversine_data.y1,
+                                           6372.8);
+    total += val;
   }
 
-  char *input_filename = argv[1];
-  FILE *input_file = fopen(input_filename, "r");
-  if (input_file == NULL) {
-    printf_error("Unable to open file '%s'\n", input_filename);
-    return 1;
-  }
-  fseek(input_file, 0, SEEK_END);
-  u32 input_file_size = ftell(input_file);
-  rewind(input_file);
-  char *input_data = malloc(input_file_size);
-  u64 start_read = __rdtsc();
-  fread(input_data, 1, input_file_size, input_file);
-  u64 elapsed_read = __rdtsc() - start_read;
+  return total / haversine_data_vector.len;
+}
 
-  u32 max_haversine_amount = input_file_size / 100;
-  HaversineDataVector haversine_data_vector = {
-      .ptr = malloc(sizeof(HaversineData) * max_haversine_amount),
-      .len = 0,
-      .capacity = max_haversine_amount,
-  };
-
+u8 parse_json(HaversineDataVector *haversine_data_vector, u8 *input_data,
+              u32 input_file_size) {
+  profile_function;
   char *expected_input_start = "{\"pairs\":[\n";
   u32 expected_input_start_size = strlen(expected_input_start);
-  char *expected_input_end = "]}";
+  // char *expected_input_end = "]}";
 
   bool parse_error = 0;
   if (input_file_size < expected_input_start_size) {
@@ -95,8 +110,6 @@ int main(int argc, char *argv[]) {
                  expected_input_start);
     return 1;
   }
-
-  u64 start_json_parser = __rdtsc();
   u32 i = expected_input_start_size;
   while (i < input_file_size) {
     if (input_data[i] == ' ') {
@@ -105,22 +118,22 @@ int main(int argc, char *argv[]) {
 
       for (u8 i2 = 0; i2 < 4; i2++) {
         if (memcmp("\"x0\":", input_data + i, 5) == 0) {
-          haversine_data_vector.ptr[haversine_data_vector.len].x0 =
+          haversine_data_vector->ptr[haversine_data_vector->len].x0 =
               parse_f64(input_data, &i);
         } else if (memcmp("\"y0\":", input_data + i, 5) == 0) {
-          haversine_data_vector.ptr[haversine_data_vector.len].y0 =
+          haversine_data_vector->ptr[haversine_data_vector->len].y0 =
               parse_f64(input_data, &i);
         } else if (memcmp("\"x1\":", input_data + i, 5) == 0) {
-          haversine_data_vector.ptr[haversine_data_vector.len].x1 =
+          haversine_data_vector->ptr[haversine_data_vector->len].x1 =
               parse_f64(input_data, &i);
         } else if (memcmp("\"y1\":", input_data + i, 5) == 0) {
-          haversine_data_vector.ptr[haversine_data_vector.len].y1 =
+          haversine_data_vector->ptr[haversine_data_vector->len].y1 =
               parse_f64(input_data, &i);
         } else {
-          printf_error(
-              "Expected \"x0\":, \"y0\": \"x1\": or \"y1\": at pos %d, instead "
-              "got %.*s\n",
-              i, 5, input_data + i);
+          printf_error("Expected \"x0\":, \"y0\": \"x1\": or \"y1\": at pos "
+                       "%d, instead "
+                       "got %.*s\n",
+                       i, 5, input_data + i);
           return 1;
         }
         if (i2 < 3 && memcmp(", ", input_data + i, 2) != 0) {
@@ -130,24 +143,68 @@ int main(int argc, char *argv[]) {
           i += 2;
         }
       }
-      haversine_data_vector.len += 1;
+      haversine_data_vector->len += 1;
     }
     i += 1;
   }
-  u64 elapsed_json_parser = __rdtsc() - start_json_parser;
+  return 0;
+}
 
-  u64 start_sum = __rdtsc();
-  f64 total = 0;
-  for (u32 i = 0; i < haversine_data_vector.len; i++) {
-    HaversineData haversine_data = haversine_data_vector.ptr[i];
-    f64 val = Haversine_ReferenceHaversine(haversine_data.x0, haversine_data.y0,
-                                           haversine_data.x1, haversine_data.y1,
-                                           6372.8);
-    total += val;
+u8 read_file(char *input_filename, u32 *input_file_size, u8 **input_data) {
+  profile_function;
+  FILE *input_file = fopen(input_filename, "r");
+  if (input_file == NULL) {
+    printf_error("Unable to open file '%s'\n", input_filename);
+    return 1;
+  } else {
+    fseek(input_file, 0, SEEK_END);
+    *input_file_size = ftell(input_file);
+    rewind(input_file);
+    *input_data = malloc(*input_file_size);
+    fread(*input_data, 1, *input_file_size, input_file);
+    return 0;
   }
-  u64 elapsed_sum = __rdtsc() - start_sum;
+}
 
-  f64 sum = total / haversine_data_vector.len;
+typedef enum {
+  a_x0,
+  a_y0,
+  a_x1,
+  a_y1,
+} Attribute;
+
+int main(int argc, char *argv[]) {
+  profile_program;
+  int error = 0;
+  if (argc < 2) {
+    printf_error("Require json filename and optional answer filename argument\n"
+                 "Usage: %s [haversine_input.json]\n"
+                 "       %s [haversine_input.json] [answer.f64]\n",
+                 argv[0], argv[0]);
+    return 1;
+  }
+
+  char *input_filename = argv[1];
+  u32 input_file_size;
+  u8 *input_data;
+  error = read_file(input_filename, &input_file_size, &input_data);
+  if (error)
+    return error;
+
+  u32 max_haversine_amount = input_file_size / 100;
+  HaversineDataVector haversine_data_vector = {
+      .ptr = malloc(sizeof(HaversineData) * max_haversine_amount),
+      .len = 0,
+      .capacity = max_haversine_amount,
+  };
+
+  // HaversineDataVector haversine_data_vector;
+  error = parse_json(&haversine_data_vector, input_data, input_file_size);
+  if (error)
+    return error;
+
+  f64 sum = haversine_sum(haversine_data_vector);
+
   printf("Haversine sum: %0.20f\n", sum);
 
   if (argc > 2) {
@@ -164,26 +221,4 @@ int main(int argc, char *argv[]) {
            "Difference: %0.20f\n",
            answer, answer - sum);
   }
-  u64 total_elapsed = __rdtsc() - start;
-
-  printf("Total time %.4fms\n",
-         (f64)total_elapsed / (f64)cpu_freq * MS_PER_SEC);
-  printf("Read:   %lu (%.4f%%)\n", elapsed_read,
-         (f64)elapsed_read / total_elapsed * 100);
-  printf("Parse: %lu (%.4f%%)\n", elapsed_json_parser,
-         (f64)elapsed_json_parser / total_elapsed * 100);
-  printf("Sum:   %lu (%.4f%%)\n", elapsed_sum,
-         (f64)elapsed_sum / total_elapsed * 100);
-  // TODO: maybe read read answers into array
-  //
-  // HaversineDataSlice expected_haversine_data_slice;
-  // fseek(raw_input_file, 0, SEEK_END);
-  // expected_haversine_data_slice.len = ftell(raw_input_file);
-  // rewind(raw_input_file);
-  // expected_haversine_data_slice.ptr =
-  //     malloc(expected_haversine_data_slice.len *
-  //            sizeof(*expected_haversine_data_slice.ptr));
-  // fread(expected_haversine_data_slice.ptr,
-  //       sizeof(*expected_haversine_data_slice.ptr),
-  //       expected_haversine_data_slice.len, raw_input_file);
 }
