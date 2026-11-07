@@ -8,47 +8,8 @@
 
 #define IS_MAIN
 #include "base.c"
+#include "profile.c"
 #include "sine_generator_main.h"
-
-#define MAX_PROFILE_POINTS 50
-
-typedef struct {
-  u64 profile_time;
-  const char *profile_name;
-} Profile_Function_Data;
-
-Profile_Function_Data profile_points_list[MAX_PROFILE_POINTS];
-u8 profile_points_len = 0;
-
-void calc_time_diff(Profile_Function_Data *profile_function_data) {
-  u64 profile_elapsed = __rdtsc() - profile_function_data->profile_time;
-  profile_function_data->profile_time = profile_elapsed;
-  profile_points_list[profile_points_len++] = *profile_function_data;
-}
-
-void program_end(u64 *program_start) {
-  u64 program_elapsed = __rdtsc() - *program_start;
-  u64 cpu_freq = get_cpu_freq(1000);
-
-  printf("Total time %.4fms\n",
-         (f64)program_elapsed / (f64)cpu_freq * MS_PER_SEC);
-  for (u8 i = 0; i < profile_points_len; i++) {
-    Profile_Function_Data profile_point = profile_points_list[i];
-    printf("  %s: %lu (%.4f%%)\n", profile_point.profile_name,
-           profile_point.profile_time,
-           (f64)profile_point.profile_time / program_elapsed * 100);
-  }
-}
-
-#define profile_function                                                       \
-  __attribute__((cleanup(                                                      \
-      calc_time_diff))) Profile_Function_Data profile_data##__LINE__ = {       \
-      .profile_time = __rdtsc(),                                               \
-      .profile_name = __func__,                                                \
-  }
-
-#define profile_program                                                        \
-  __attribute__((cleanup(program_end))) u64 program_start##__LINE__ = __rdtsc()
 
 f64 parse_f64(u8 *input_data, u32 *i) {
   *i += 5; // for e.g. "x0":
@@ -112,6 +73,7 @@ u8 parse_json(HaversineDataVector *haversine_data_vector, u8 *input_data,
   }
   u32 i = expected_input_start_size;
   while (i < input_file_size) {
+    profile_block("sum_part");
     if (input_data[i] == ' ') {
     } else if (input_data[i] == '{') {
       i += 1;
@@ -222,3 +184,9 @@ int main(int argc, char *argv[]) {
            answer, answer - sum);
   }
 }
+
+#define static_assert(cond, message)                                           \
+  typedef char concat(static_assert_, message)[(cond) ? 1 : -1]
+
+static_assert(__COUNTER__ < MAX_PROFILE_POINTS,
+              concat(can_not_have_more_than_, MAX_PROFILE_POINTS));

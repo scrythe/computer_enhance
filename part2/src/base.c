@@ -20,6 +20,9 @@ typedef double f64;
 #define NANOSEC_PER_MS 1e6
 #define MS_PER_SEC 1e3
 
+#define concat_(a, b) a##b
+#define concat(a, b) concat_(a, b)
+
 f64 Haversine_ReferenceHaversine(f64 X0, f64 Y0, f64 X1, f64 Y1,
                                  f64 EarthRadius);
 
