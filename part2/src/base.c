@@ -1,9 +1,11 @@
 #ifndef IS_MAIN
 #define _POSIX_C_SOURCE 200809L
+#include <stdio.h>
 #include <time.h>
 #include <x86intrin.h>
 #endif
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef uint8_t u8;
@@ -16,12 +18,31 @@ typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
 
+#define slice(type) concat(type, _Slice)
+#define slice_pointer(type) concat(type, _pointer_Slice)
+
+#define create_slice_type(type)                                                \
+  typedef struct {                                                             \
+    type *ptr;                                                                 \
+    u32 len;                                                                   \
+  } slice(type)
+
+#define create_slice_type_pointer(type)                                        \
+  typedef struct {                                                             \
+    type **ptr;                                                                \
+    u32 len;                                                                   \
+  } slice_pointer(type)
+
 #define NANOSEC_PER_SEC 1e9
 #define NANOSEC_PER_MS 1e6
 #define MS_PER_SEC 1e3
 
 #define concat_(a, b) a##b
 #define concat(a, b) concat_(a, b)
+
+create_slice_type(u8);
+
+#define make_string(string) (slice(u8)){.ptr = (u8 *)string, sizeof(string) - 1}
 
 f64 Haversine_ReferenceHaversine(f64 X0, f64 Y0, f64 X1, f64 Y1,
                                  f64 EarthRadius);
@@ -68,3 +89,38 @@ u64 get_cpu_freq(u64 ms_wait_time) {
   //  1/NANOSEC_PER_SEC sec), so cpu_elapsed/(os_elpased/NANOSEC_PER_SEC)
   return cpu_elapsed * NANOSEC_PER_SEC / os_elapsed;
 }
+
+bool is_equal_u8_slice(slice(u8) slice_1, slice(u8) slice_2) {
+  if (slice_1.len != slice_2.len)
+    return false;
+  u32 i = 0;
+  while (i < slice_1.len && i < slice_2.len) {
+    if (slice_1.ptr[i] != slice_2.ptr[i])
+      return false;
+    i += 1;
+  }
+  return true;
+}
+
+typedef struct {
+  f64 x0;
+  f64 y0;
+  f64 x1;
+  f64 y1;
+} HaversineData;
+
+typedef struct {
+  f64 *ptr;
+  u32 len;
+} F64Slice;
+
+typedef struct {
+  HaversineData *ptr;
+  u32 len;
+} HaversineDataSlice;
+
+typedef struct {
+  HaversineData *ptr;
+  u32 len;
+  u32 capacity;
+} HaversineDataVector;

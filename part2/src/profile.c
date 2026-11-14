@@ -1,6 +1,5 @@
 #ifndef IS_MAIN
 #include "base.c"
-#include <stdbool.h>
 #include <stdio.h>
 #endif
 

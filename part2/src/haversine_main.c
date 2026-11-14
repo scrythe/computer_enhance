@@ -1,6 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
 #include <math.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,7 +8,6 @@
 #define IS_MAIN
 #include "base.c"
 #include "profile.c"
-#include "sine_generator_main.h"
 
 f64 parse_f64(u8 *input_data, u32 *i) {
   *i += 5; // for e.g. "x0":
