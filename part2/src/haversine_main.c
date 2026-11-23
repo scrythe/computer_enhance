@@ -9,31 +9,7 @@
 #include "base.c"
 #include "profile.c"
 
-f64 parse_f64(u8 *input_data, u32 *i) {
-  *i += 5; // for e.g. "x0":
-  bool pos = true;
-  i64 integer = 0;
-  if (input_data[*i] == '-') {
-    pos = false;
-    *i += 1;
-  }
-  while (input_data[*i] >= '0' && input_data[*i] <= '9') {
-    integer = integer * 10 + input_data[*i] - '0';
-    *i += 1;
-  }
-  u64 fraction = 0;
-  u16 decimal_point_pos = 0;
-  if (input_data[*i] == '.') {
-    *i += 1;
-    while (input_data[*i] >= '0' && input_data[*i] <= '9') {
-      fraction = fraction * 10 + input_data[*i] - '0';
-      decimal_point_pos += 1;
-      *i += 1;
-    }
-  }
-  f64 pos_val = (f64)integer + (f64)fraction * pow(10, -decimal_point_pos);
-  return pos ? pos_val : pos_val * -1;
-}
+#include "json_parser.c"
 
 f64 haversine_sum(HaversineDataVector haversine_data_vector) {
   profile_function;
@@ -49,68 +25,7 @@ f64 haversine_sum(HaversineDataVector haversine_data_vector) {
   return total / haversine_data_vector.len;
 }
 
-u8 parse_json(HaversineDataVector *haversine_data_vector, u8 *input_data,
-              u32 input_file_size) {
-  profile_function;
-  char *expected_input_start = "{\"pairs\":[\n";
-  u32 expected_input_start_size = strlen(expected_input_start);
-  // char *expected_input_end = "]}";
-
-  bool parse_error = 0;
-  if (input_file_size < expected_input_start_size) {
-    parse_error = true;
-  }
-  if (!parse_error &&
-      memcmp(expected_input_start, input_data, expected_input_start_size)) {
-    parse_error = true;
-  }
-  if (parse_error) {
-    printf_error("File invalid, must have %s at the beginning\n",
-                 expected_input_start);
-    return 1;
-  }
-  u32 i = expected_input_start_size;
-  while (i < input_file_size) {
-    profile_block("sum_part");
-    if (input_data[i] == ' ') {
-    } else if (input_data[i] == '{') {
-      i += 1;
-
-      for (u8 i2 = 0; i2 < 4; i2++) {
-        if (memcmp("\"x0\":", input_data + i, 5) == 0) {
-          haversine_data_vector->ptr[haversine_data_vector->len].x0 =
-              parse_f64(input_data, &i);
-        } else if (memcmp("\"y0\":", input_data + i, 5) == 0) {
-          haversine_data_vector->ptr[haversine_data_vector->len].y0 =
-              parse_f64(input_data, &i);
-        } else if (memcmp("\"x1\":", input_data + i, 5) == 0) {
-          haversine_data_vector->ptr[haversine_data_vector->len].x1 =
-              parse_f64(input_data, &i);
-        } else if (memcmp("\"y1\":", input_data + i, 5) == 0) {
-          haversine_data_vector->ptr[haversine_data_vector->len].y1 =
-              parse_f64(input_data, &i);
-        } else {
-          printf_error("Expected \"x0\":, \"y0\": \"x1\": or \"y1\": at pos "
-                       "%d, instead "
-                       "got %.*s\n",
-                       i, 5, input_data + i);
-          return 1;
-        }
-        if (i2 < 3 && memcmp(", ", input_data + i, 2) != 0) {
-          printf_error("Expected ', ' after value at pos %d\n", i);
-          return 1;
-        } else {
-          i += 2;
-        }
-      }
-      haversine_data_vector->len += 1;
-    }
-    i += 1;
-  }
-  return 0;
-}
-
-u8 read_file(char *input_filename, u32 *input_file_size, u8 **input_data) {
+u8 read_file(char *input_filename, slice(u8) * input_data) {
   profile_function;
   FILE *input_file = fopen(input_filename, "r");
   if (input_file == NULL) {
@@ -118,10 +33,11 @@ u8 read_file(char *input_filename, u32 *input_file_size, u8 **input_data) {
     return 1;
   } else {
     fseek(input_file, 0, SEEK_END);
-    *input_file_size = ftell(input_file);
+    u32 input_file_size = ftell(input_file);
     rewind(input_file);
-    *input_data = malloc(*input_file_size);
-    fread(*input_data, 1, *input_file_size, input_file);
+    input_data->ptr = malloc(input_file_size);
+    fread(input_data->ptr, 1, input_file_size, input_file);
+    input_data->len = input_file_size;
     return 0;
   }
 }
@@ -145,21 +61,24 @@ int main(int argc, char *argv[]) {
   }
 
   char *input_filename = argv[1];
-  u32 input_file_size;
-  u8 *input_data;
-  error = read_file(input_filename, &input_file_size, &input_data);
+  // u8 *input_data;
+  slice(u8) input_data = {};
+  error = read_file(input_filename, &input_data);
   if (error)
     return error;
 
-  u32 max_haversine_amount = input_file_size / 100;
+  // bad way of doing it ig but whatever
+  u32 max_haversine_amount = input_data.len / 100;
   HaversineDataVector haversine_data_vector = {
       .ptr = malloc(sizeof(HaversineData) * max_haversine_amount),
       .len = 0,
       .capacity = max_haversine_amount,
   };
 
-  // HaversineDataVector haversine_data_vector;
-  error = parse_json(&haversine_data_vector, input_data, input_file_size);
+  Json_Output json_output = parse_json(input_data);
+  parse_haversine_data(json_output, &haversine_data_vector);
+  // error = parse_json(&haversine_data_vector, input_data, input_file_size);
+
   if (error)
     return error;
 

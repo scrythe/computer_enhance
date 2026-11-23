@@ -1,11 +1,12 @@
+#ifndef IS_MAIN
 #define _POSIX_C_SOURCE 200809L
+#include <math.h>
 #include <stdio.h>
-#include <time.h>
 #include <x86intrin.h>
-
 #define IS_MAIN
 #include "base.c"
 #include "profile.c"
+#endif
 
 create_slice_type(slice(u8));
 typedef struct {
@@ -26,7 +27,6 @@ typedef struct {
   u32 val;
 } Json_Output;
 
-u8 read_file(char *input_filename, slice(u8) * input_data);
 Json_Output parse_json(slice(u8) input_data);
 u32 parse_element(slice(Node) * buff, slice(slice(u8)) * buff_literals,
                   slice(u8) input_data, u32 *i);
@@ -39,51 +39,68 @@ Node json_lookup_node(slice(Node) buff, slice(slice(u8)) buff_literals,
 slice(u8) json_lookup_literal(slice(Node) buff, slice(slice(u8)) buff_literals,
                               Node node, slice(u8) key);
 
-int main(int argc, char *argv[]) {
-  int error = 0;
-  if (argc < 2) {
-    printf_error("Require json filename and optional answer filename argument\n"
-                 "Usage: %s [haversine_input.json]\n"
-                 "       %s [haversine_input.json] [answer.f64]\n",
-                 argv[0], argv[0]);
-    error = 1;
+f64 parse_f64(slice(u8) number) {
+  u32 i = 0;
+  bool pos = true;
+
+  if (number.ptr[i] == '-') {
+    pos = false;
+    i += 1;
   }
-
-  slice(u8) input_data = {};
-  if (!error) {
-    char *input_filename = argv[1];
-    error = read_file(input_filename, &input_data);
+  i64 integer = 0;
+  while (i < number.len && number.ptr[i] >= '0' && number.ptr[i] <= '9') {
+    integer = integer * 10 + number.ptr[i] - '0';
+    i += 1;
   }
-
-  if (!error) {
-    Json_Output json_output = parse_json(input_data);
-    Node json_entry = json_output.buff.ptr[json_output.val];
-    print_json_element(json_output.buff, json_output.buff_literals,
-                       json_output.val);
-    printf("\n");
-  }
-
-  return error;
-}
-
-u8 read_file(char *input_filename, slice(u8) * input_data) {
-  profile_function;
-  FILE *input_file = fopen(input_filename, "r");
-  u8 error = 0;
-  if (input_file == NULL) {
-    printf_error("Unable to open file '%s'\n", input_filename);
-    error = 1;
-  } else {
-    fseek(input_file, 0, SEEK_END);
-    u32 len = ftell(input_file);
-    rewind(input_file);
-    input_data->ptr = malloc(len);
-    if (input_data->ptr) {
-      fread(input_data->ptr, 1, len, input_file);
-      input_data->len = len;
+  u64 fraction = 0;
+  u16 decimal_point_pos = 0;
+  if (i < number.len && number.ptr[i] == '.') {
+    i += 1;
+    while (i < number.len && number.ptr[i] >= '0' && number.ptr[i] <= '9') {
+      fraction = fraction * 10 + number.ptr[i] - '0';
+      decimal_point_pos += 1;
+      i += 1;
     }
   }
-  return error;
+
+  f64 pos_val = (f64)integer + (f64)fraction * pow(10, -decimal_point_pos);
+  return pos ? pos_val : pos_val * -1;
+}
+
+void parse_haversine_data(Json_Output json_output,
+                          HaversineDataVector *haversine_data_vector) {
+  slice(Node) buff = json_output.buff;
+  slice(slice(u8)) buff_literals = json_output.buff_literals;
+  u32 node_i = json_output.val;
+  if (!(node_i & 0x80000000)) {
+    Node node = buff.ptr[node_i];
+    Node list_node =
+        json_lookup_node(buff, buff_literals, node, make_string("pairs"));
+    while (true) {
+      Node pairs_node = buff.ptr[list_node.val];
+      slice(u8) x0 = json_lookup_literal(buff, buff_literals, pairs_node,
+                                         make_string("x0"));
+      slice(u8) y0 = json_lookup_literal(buff, buff_literals, pairs_node,
+                                         make_string("y0"));
+      slice(u8) x1 = json_lookup_literal(buff, buff_literals, pairs_node,
+                                         make_string("x1"));
+      slice(u8) y1 = json_lookup_literal(buff, buff_literals, pairs_node,
+                                         make_string("y1"));
+      HaversineData haversine_pair = {
+          .x0 = parse_f64(x0),
+          .y0 = parse_f64(y0),
+          .x1 = parse_f64(x1),
+          .y1 = parse_f64(y1),
+      };
+      haversine_data_vector->ptr[haversine_data_vector->len] = haversine_pair;
+      haversine_data_vector->len += 1;
+      if (!list_node.next)
+        break;
+      list_node = buff.ptr[list_node.next];
+    }
+  } else {
+    // return 1;
+  }
 }
 
 Json_Output parse_json(slice(u8) input_data) {
@@ -271,9 +288,3 @@ slice(u8) json_lookup_literal(slice(Node) buff, slice(slice(u8)) buff_literals,
   }
   return res;
 }
-
-#define static_assert(cond, message)                                           \
-  typedef char concat(static_assert_, message)[(cond) ? 1 : -1]
-
-static_assert(__COUNTER__ < MAX_PROFILE_POINTS,
-              concat(can_not_have_more_than_, MAX_PROFILE_POINTS));
