@@ -50,7 +50,7 @@ if [[ $file != *"_main" ]]; then
   exit 1
 fi
 
-common_build_flags="-g -std=c99 $asan_flags  -Wall -Werror -o build/$file src/$file.c build/haversine_formula.a -lm"
+common_build_flags="-g -std=c99 $asan_flags -Wall -Werror -o build/$file src/$file.c build/haversine_formula.a -lm"
 if [[ "${release:-0}" == 1 ]]; then
   echo "[release mode]"
   compile="clang -O2 $common_build_flags"

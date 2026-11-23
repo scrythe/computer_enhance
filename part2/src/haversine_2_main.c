@@ -32,7 +32,7 @@ u32 parse_element(slice(Node) * buff, slice(slice(u8)) * buff_literals,
                   slice(u8) input_data, u32 *i);
 
 void print_json_element(slice(Node) buff, slice(slice(u8)) buff_literals,
-                        Node node);
+                        u32 node_i);
 
 Node json_lookup_node(slice(Node) buff, slice(slice(u8)) buff_literals,
                       Node node, slice(u8) key);
@@ -58,8 +58,9 @@ int main(int argc, char *argv[]) {
   if (!error) {
     Json_Output json_output = parse_json(input_data);
     Node json_entry = json_output.buff.ptr[json_output.val];
-    Node node = json_entry;
-    print_json_element(json_output.buff, json_output.buff_literals, node);
+    print_json_element(json_output.buff, json_output.buff_literals,
+                       json_output.val);
+    printf("\n");
   }
 
   return error;
@@ -88,11 +89,11 @@ u8 read_file(char *input_filename, slice(u8) * input_data) {
 Json_Output parse_json(slice(u8) input_data) {
   u32 i = 0;
   slice(Node) buff = {
-      .ptr = malloc(input_data.len * sizeof(Node)),
+      .ptr = calloc(input_data.len, sizeof(Node)),
       .len = 1, // 0 means unavailable
   };
   slice(slice(u8)) buff_literals = {
-      .ptr = malloc(input_data.len * sizeof(slice(u8))),
+      .ptr = calloc(input_data.len, sizeof(slice(u8))),
       .len = 1,
   };
   u32 val = parse_element(&buff, &buff_literals, input_data, &i);
@@ -125,6 +126,7 @@ u32 parse_element(slice(Node) * buff, slice(slice(u8)) * buff_literals,
         break;
 
       case '"': {
+        // printf("%s\n", &input_data.ptr[*i]);
         slice(u8) key = {.ptr = &input_data.ptr[*i]};
         u8 character = 0;
         while (true) {
@@ -153,8 +155,7 @@ u32 parse_element(slice(Node) * buff, slice(slice(u8)) * buff_literals,
   } break;
   case '[': {
     u32 list_i = buff->len;
-    Node *prev_node = &buff->ptr[list_i];
-    // Node *prev_node = &(Node){};
+    Node *prev_node = &(Node){};
     while (true) {
       u8 character = input_data.ptr[*i];
       *i += 1;
@@ -186,7 +187,7 @@ u32 parse_element(slice(Node) * buff, slice(slice(u8)) * buff_literals,
     break;
   case '-':
   case '0' ... '9': {
-    slice(u8) number = {.ptr = &input_data.ptr[*i]};
+    slice(u8) number = {.ptr = &input_data.ptr[*i - 1]};
     u8 character = 0;
     while (true) {
       character = input_data.ptr[*i];
@@ -214,30 +215,33 @@ u32 parse_element(slice(Node) * buff, slice(slice(u8)) * buff_literals,
   return 0;
 }
 void print_json_element(slice(Node) buff, slice(slice(u8)) buff_literals,
-                        Node node) {
-
-  if (node.val & 0x80000000) {
-    u32 literal_i = node.val & 0x7FFFFFFF; // remove bit at beginning
+                        u32 node_i) {
+  if (node_i & 0x80000000) {
+    u32 literal_i = node_i & 0x7FFFFFFF; // remove bit at beginning
     slice(u8) number = buff_literals.ptr[literal_i];
     printf("%.*s", number.len, number.ptr);
   } else {
-    Node obj_node = buff.ptr[node.val];
-    if (obj_node.key.ptr != 0) {
+    Node node = buff.ptr[node_i];
+    if (node.key.ptr != 0) {
       printf("{");
-      do {
-        printf("%.*s: ", obj_node.key.len, obj_node.key.ptr);
-        print_json_element(buff, buff_literals, buff.ptr[obj_node.val]);
-        printf(",");
-        obj_node = buff.ptr[obj_node.next];
-      } while (obj_node.next);
+      while (true) {
+        printf("\"%.*s\": ", node.key.len, node.key.ptr);
+        print_json_element(buff, buff_literals, node.val);
+        if (!node.next)
+          break;
+        node = buff.ptr[node.next];
+        printf(", ");
+      }
       printf("}");
     } else {
       printf("[");
-      do {
-        print_json_element(buff, buff_literals, buff.ptr[obj_node.val]);
+      while (true) {
+        print_json_element(buff, buff_literals, node.val);
+        if (!node.next)
+          break;
+        node = buff.ptr[node.next];
         printf(",");
-        obj_node = buff.ptr[obj_node.next];
-      } while (obj_node.next);
+      }
       printf("]");
     }
   }
