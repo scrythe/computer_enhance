@@ -13,6 +13,7 @@ typedef struct {
 } Profile_Start;
 
 typedef struct {
+  bool is_profiling;
   u64 elapsed_total;
   u64 elapsed_children;
   const char *profile_name;
@@ -29,12 +30,13 @@ void end_profile_block(Profile_Start *input) {
   anchor->elapsed_total += __rdtsc() - input->start;
   parent_anchor->elapsed_children += __rdtsc() - input->start;
   anchor->hits += 1;
+  anchor->is_profiling = false;
 
   current_anchor = input->parent_anchor;
 }
 
-void end_profile_and_print(u64 *program_start) {
-  u64 program_elapsed = __rdtsc() - *program_start;
+void end_profile_and_print(u64 program_start) {
+  u64 program_elapsed = __rdtsc() - program_start;
   u64 cpu_freq = get_cpu_freq(1000);
 
   printf("Total time %.4fms\n",
@@ -59,16 +61,19 @@ void end_profile_and_print(u64 *program_start) {
 #define profile_block(name)                                                    \
   u16 parent_anchor = current_anchor;                                          \
   current_anchor = __COUNTER__;                                                \
-  __attribute__((cleanup(end_profile_block))) Profile_Start concat(            \
-      profile_block_start, __LINE__) = {                                       \
-      .profile_name = name,                                                    \
-      .start = __rdtsc(),                                                      \
-      .profile_anchor = current_anchor,                                        \
-      .parent_anchor = parent_anchor,                                          \
+  if (!profile_anchors[current_anchor].is_profiling) {                         \
+    profile_anchors[current_anchor].is_profiling = true;                       \
+    __attribute__((cleanup(end_profile_block))) Profile_Start concat(          \
+        profile_block_start, __LINE__) = {                                     \
+        .profile_name = name,                                                  \
+        .start = __rdtsc(),                                                    \
+        .profile_anchor = current_anchor,                                      \
+        .parent_anchor = parent_anchor,                                        \
+    };                                                                         \
   }
 
 #define profile_function profile_block(__func__)
 
-#define profile_program                                                        \
-  __attribute__((cleanup(end_profile_and_print))) u64 concat(                  \
-      program_start, __LINE__) = __rdtsc()
+#define profile_begin u64 program_start = __rdtsc()
+
+#define profile_end end_profile_and_print(program_start)

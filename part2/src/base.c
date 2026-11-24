@@ -18,6 +18,12 @@ typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
 
+#define concat_(a, b) a##b
+#define concat(a, b) concat_(a, b)
+
+#define static_assert(cond, message)                                           \
+  typedef char concat(static_assert_, message)[(cond) ? 1 : -1]
+
 #define slice(type) concat(type, _Slice)
 #define slice_pointer(type) concat(type, _pointer_Slice)
 
@@ -36,9 +42,6 @@ typedef double f64;
 #define NANOSEC_PER_SEC 1e9
 #define NANOSEC_PER_MS 1e6
 #define MS_PER_SEC 1e3
-
-#define concat_(a, b) a##b
-#define concat(a, b) concat_(a, b)
 
 create_slice_type(u8);
 

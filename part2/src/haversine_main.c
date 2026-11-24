@@ -50,7 +50,7 @@ typedef enum {
 } Attribute;
 
 int main(int argc, char *argv[]) {
-  profile_program;
+  profile_begin;
   int error = 0;
   if (argc < 2) {
     printf_error("Require json filename and optional answer filename argument\n"
@@ -100,10 +100,8 @@ int main(int argc, char *argv[]) {
            "Difference: %0.20f\n",
            answer, answer - sum);
   }
+  profile_end;
 }
-
-#define static_assert(cond, message)                                           \
-  typedef char concat(static_assert_, message)[(cond) ? 1 : -1]
 
 static_assert(__COUNTER__ < MAX_PROFILE_POINTS,
               concat(can_not_have_more_than_, MAX_PROFILE_POINTS));

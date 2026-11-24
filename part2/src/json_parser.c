@@ -105,6 +105,7 @@ void parse_haversine_data(Json_Output json_output,
 
 Json_Output parse_json(slice(u8) input_data) {
   u32 i = 0;
+  // profile_function;
   slice(Node) buff = {
       .ptr = calloc(input_data.len, sizeof(Node)),
       .len = 1, // 0 means unavailable
@@ -121,6 +122,7 @@ Json_Output parse_json(slice(u8) input_data) {
 // error handling, whats that?
 u32 parse_element(slice(Node) * buff, slice(slice(u8)) * buff_literals,
                   slice(u8) input_data, u32 *i) {
+  profile_function;
   u8 character = input_data.ptr[*i];
   *i += 1;
   switch (character) {
