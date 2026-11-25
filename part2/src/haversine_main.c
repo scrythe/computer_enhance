@@ -26,7 +26,7 @@ f64 haversine_sum(HaversineDataVector haversine_data_vector) {
 }
 
 u8 read_file(char *input_filename, slice(u8) * input_data) {
-  profile_function;
+  // profile_function;
   FILE *input_file = fopen(input_filename, "r");
   if (input_file == NULL) {
     printf_error("Unable to open file '%s'\n", input_filename);
@@ -36,6 +36,7 @@ u8 read_file(char *input_filename, slice(u8) * input_data) {
     u32 input_file_size = ftell(input_file);
     rewind(input_file);
     input_data->ptr = malloc(input_file_size);
+    time_bandwith(__func__, input_file_size);
     fread(input_data->ptr, 1, input_file_size, input_file);
     input_data->len = input_file_size;
     return 0;
