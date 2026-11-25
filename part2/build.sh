@@ -34,6 +34,12 @@ if [[ "${asan:-0}" == 1 ]]; then
   asan_flags="-fsanitize=address -fno-omit-frame-pointer"
 fi
 
+profile_flags=""
+if [[ "${profile:-0}" == 1 ]]; then
+  echo "[enable profile]"
+  profile_flags="-DPROFILE=1"
+fi
+
 if [[ ! -f "haversine_formula.a" ]]; then
   echo "[building sim86_shared_debug.a]"
   clang -g $asan_flags -c -o build/haversine_formula.o src/haversine_formula.cpp
@@ -50,7 +56,7 @@ if [[ $file != *"_main" ]]; then
   exit 1
 fi
 
-common_build_flags="-g -std=c99 $asan_flags -Wall -Werror -o build/$file src/$file.c build/haversine_formula.a -lm"
+common_build_flags="-g -std=c99 $asan_flags -Wall -Werror -o build/$file src/$file.c build/haversine_formula.a -lm $profile_flags"
 if [[ "${release:-0}" == 1 ]]; then
   echo "[release mode]"
   compile="clang -O2 $common_build_flags"

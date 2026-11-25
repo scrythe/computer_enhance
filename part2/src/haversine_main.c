@@ -103,5 +103,4 @@ int main(int argc, char *argv[]) {
   profile_end;
 }
 
-static_assert(__COUNTER__ < MAX_PROFILE_POINTS,
-              concat(can_not_have_more_than_, MAX_PROFILE_POINTS));
+assert_max_profile_points;

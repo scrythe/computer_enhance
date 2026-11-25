@@ -3,7 +3,15 @@
 #include <stdio.h>
 #endif
 
+// #define PROFILE
+
+#ifdef PROFILE
+
 #define MAX_PROFILE_POINTS 50
+
+#define assert_max_profile_points                                              \
+  static_assert(__COUNTER__ < MAX_PROFILE_POINTS,                              \
+                concat(can_not_have_more_than_, MAX_PROFILE_POINTS))
 
 typedef struct {
   u64 start;
@@ -71,6 +79,24 @@ void end_profile_and_print(u64 program_start) {
   };
 
 #define profile_function profile_block(__func__)
+
+#else
+
+#define assert_max_profile_points
+
+#define profile_block(...)
+
+#define profile_function
+
+void end_profile_and_print(u64 program_start) {
+  u64 program_elapsed = __rdtsc() - program_start;
+  u64 cpu_freq = get_cpu_freq(1000);
+
+  printf("Total time: %.4fms (CPU freq %ld)\n",
+         (f64)program_elapsed / (f64)cpu_freq * MS_PER_SEC, cpu_freq);
+}
+
+#endif
 
 #define profile_begin u64 program_start = __rdtsc()
 
