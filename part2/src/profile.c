@@ -7,16 +7,15 @@
 
 typedef struct {
   u64 start;
-  u64 elapsed_root;
+  u64 elapsed_inclusive;
   const char *profile_name;
   u16 profile_anchor;
   u16 parent_anchor;
 } Profile_Start;
 
 typedef struct {
-  u64 elapsed_total;
-  u64 elapsed_root;
-  u64 elapsed_children;
+  u64 elapsed_inclusive;
+  u64 elapsed_exclusive;
   const char *profile_name;
   u32 hits;
 } Profile_Anchor;
@@ -29,9 +28,9 @@ void end_profile_block(Profile_Start *input) {
   Profile_Anchor *parent_anchor = &profile_anchors[input->parent_anchor];
   u64 elapsed = __rdtsc() - input->start;
   anchor->profile_name = input->profile_name;
-  anchor->elapsed_total += elapsed;
-  anchor->elapsed_root = input->elapsed_root + elapsed;
-  parent_anchor->elapsed_children += elapsed;
+  anchor->elapsed_inclusive = input->elapsed_inclusive + elapsed;
+  anchor->elapsed_exclusive += elapsed;
+  parent_anchor->elapsed_exclusive -= elapsed;
   anchor->hits += 1;
 
   current_anchor = input->parent_anchor;
@@ -41,19 +40,18 @@ void end_profile_and_print(u64 program_start) {
   u64 program_elapsed = __rdtsc() - program_start;
   u64 cpu_freq = get_cpu_freq(1000);
 
-  printf("Total time %.4fms\n",
-         (f64)program_elapsed / (f64)cpu_freq * MS_PER_SEC);
-  for (u8 i = 0; i < MAX_PROFILE_POINTS; i++) {
+  printf("Total time: %.4fms (CPU freq %ld)\n",
+         (f64)program_elapsed / (f64)cpu_freq * MS_PER_SEC, cpu_freq);
+  for (u8 i = 1; i < MAX_PROFILE_POINTS; i++) {
     Profile_Anchor profile_anchor = profile_anchors[i];
-    if (profile_anchor.elapsed_total) {
-      u64 elapsed =
-          profile_anchor.elapsed_total - profile_anchor.elapsed_children;
-      printf("  %s[%d]: %lu (%.4f%%", profile_anchor.profile_name,
-             profile_anchor.hits, elapsed,
-             (f64)elapsed / program_elapsed * 100);
-      if (profile_anchor.elapsed_children) {
-        printf(", %.4f%% w/childrend",
-               (f64)profile_anchor.elapsed_root / program_elapsed * 100);
+    if (profile_anchor.elapsed_exclusive) {
+      printf("  %s[%d]: %lu (%.2f%%", profile_anchor.profile_name,
+             profile_anchor.hits, profile_anchor.elapsed_exclusive,
+             (f64)profile_anchor.elapsed_exclusive / program_elapsed * 100);
+      if (profile_anchor.elapsed_inclusive !=
+          profile_anchor.elapsed_exclusive) {
+        printf(", %.2f%% w/childrend",
+               (f64)profile_anchor.elapsed_inclusive / program_elapsed * 100);
       }
       printf(")\n");
     }
@@ -65,9 +63,9 @@ void end_profile_and_print(u64 program_start) {
   current_anchor = __COUNTER__;                                                \
   __attribute__((cleanup(end_profile_block))) Profile_Start concat(            \
       profile_block_start, __LINE__) = {                                       \
-      .profile_name = name,                                                    \
       .start = __rdtsc(),                                                      \
-      .elapsed_root = profile_anchors[current_anchor].elapsed_root,            \
+      .profile_name = name,                                                    \
+      .elapsed_inclusive = profile_anchors[current_anchor].elapsed_inclusive,  \
       .profile_anchor = current_anchor,                                        \
       .parent_anchor = parent_anchor,                                          \
   };
